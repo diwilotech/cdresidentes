@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cartera · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+  <style>
+    .bars { display: flex; align-items: flex-end; gap: 6px; height: 170px; }
+    .bars .b { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+    .bars .b i { display: block; width: 100%; max-width: 34px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, #10B981, #047857); min-height: 2px; }
+    .bars .b span { font: 600 10px/1.2 var(--cdr-mono); color: var(--cdr-muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Auditoría de cartera</div>
+        <h1 class="page-title">Cartera e intereses de mora</h1>
+        <p class="page-sub">Saldos por cobrar, cuotas de administración, extraordinarias, parqueaderos, retroactivos y cobro jurídico.</p>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary manager" id="interestBtn"><i class="bi bi-percent me-1"></i>Liquidar intereses</button>
+        <button class="btn btn-outline-primary manager" id="genBtn"><i class="bi bi-calendar-plus me-1"></i>Generar cuotas del mes</button>
+        <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Nuevo cobro</button>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3" id="kpis"></div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-lg-7"><div class="card h-100">
+        <div class="card-header"><i class="bi bi-bar-chart me-2 text-primary"></i>Recaudo de los últimos 12 meses</div>
+        <div class="card-body"><div class="bars" id="bars"></div></div>
+      </div></div>
+      <div class="col-lg-5"><div class="card h-100">
+        <div class="card-header"><i class="bi bi-hourglass-split me-2 text-danger"></i>Clasificación por antigüedad</div>
+        <div class="card-body" id="aging"></div>
+      </div></div>
+    </div>
+
+    <div class="card">
+      <div class="filters">
+        <select id="status" class="form-select">
+          <option value="pending">Pendientes</option><option value="overdue">Vencidos</option><option value="paid">Pagados</option><option value="">Todos</option>
+        </select>
+        <select id="concept" class="form-select"><option value="">Concepto: todos</option></select>
+        <span id="unitChip" class="d-none align-self-center"></span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>Unidad</th><th>Concepto</th><th class="hide-xs">Vence</th><th class="num">Valor</th><th>Estado</th><th class="text-end"></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('cartera'))) return;
+      const { esc, money, moneyShort, unitLabel } = App;
+      const $ = (id) => document.getElementById(id);
+      if (!App.canManage()) document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
+      $('concept').innerHTML += Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+      let unit = App.param('unit') || '';
+      let items = [];
+      const today = App.todayLocal();
+
+      async function units(propertyId) {
+        return (await App.api('/units' + App.qs({ property: propertyId }, { withProperty: false }))).items;
+      }
+
+      async function loadSummary() {
+        const s = await App.api('/charges/summary' + App.qs());
+        const moraPct = s.units ? Math.round((s.debtors / s.units) * 100) : 0;
+        const eff = s.billed_month ? Math.min(100, Math.round((s.collected_month / s.billed_month) * 100)) : 0;
+        const k = (label, value, cls = '', sub = '') => `<div class="col-6 col-lg-3"><div class="stat-strip ${cls} h-100"><div class="lbl">${label}</div><div class="val fs-5">${value}</div>${sub ? `<div class="small text-body-secondary">${sub}</div>` : ''}</div></div>`;
+        $('kpis').innerHTML = k('Cartera total pendiente', moneyShort(s.pending)) + k('Vencida', moneyShort(s.overdue), 'red', `${s.debtors} unidades · ${moraPct}%`) +
+          k('Recaudado este mes', moneyShort(s.collected_month)) + k('Eficiencia de recaudo', `${eff}%`, 'violet', `facturado ${moneyShort(s.billed_month)}`);
+
+        const months = [];
+        for (let i = 11; i >= 0; i--) { const d = new Date(today.slice(0, 7) + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - i); months.push(d.toISOString().slice(0, 7)); }
+        const by = Object.fromEntries(s.monthly.map((m) => [m.month, m.collected]));
+        const max = Math.max(1, ...months.map((m) => by[m] || 0));
+        $('bars').innerHTML = months.map((m) => `<div class="b" title="${App.fmtMonth(m)}: ${money(by[m] || 0)}"><i style="height:${Math.round(((by[m] || 0) / max) * 100)}%"></i><span>${App.MESES_LARGOS[+m.slice(5) - 1].slice(0, 3)}</span></div>`).join('');
+
+        const order = ['0-30', '31-60', '61-90', '90+'];
+        const ag = Object.fromEntries(s.aging.map((a) => [a.bucket, a]));
+        const tot = s.aging.reduce((x, a) => x + a.amount, 0) || 1;
+        const cls = { '0-30': 'bg-warning', '31-60': 'bg-orange', '61-90': 'bg-danger', '90+': 'bg-dark' };
+        $('aging').innerHTML = order.map((b) => {
+          const a = ag[b] || { amount: 0, units: 0 };
+          return `<div class="mb-3"><div class="d-flex justify-content-between small"><span>${b} días <span class="text-body-secondary">· ${a.units} unid.</span></span><span class="mono fw-semibold">${money(a.amount)}</span></div>
+            <div class="progress" style="height:8px"><div class="progress-bar ${cls[b]}" style="width:${Math.round((a.amount / tot) * 100)}%;${b === '31-60' ? 'background:#EA580C' : ''}"></div></div></div>`;
+        }).join('') + `<div class="small text-body-secondary">Por concepto: ${s.byConcept.map((c) => `${esc(App.CONCEPTS[c.concept])} ${money(c.amount)}`).join(' · ') || '—'}</div>`;
+      }
+
+      async function load() {
+        loadSummary().catch(App.fail);
+        let d;
+        try { d = await App.api('/charges' + App.qs({ status: $('status').value, concept: $('concept').value, unit })); } catch (err) { return App.fail(err); }
+        items = d.items;
+        $('unitChip').classList.toggle('d-none', !unit);
+        if (unit && items[0]) $('unitChip').innerHTML = `<span class="badge text-bg-light border">Unidad ${esc(unitLabel(items[0]))} <button class="btn btn-link btn-sm p-0 ms-1" id="clearUnit"><i class="bi bi-x"></i></button></span>`;
+        $('rows').innerHTML = items.length ? items.map((c) => `
+          <tr>
+            <td><div class="fw-semibold">${esc(unitLabel(c))}</div><div class="small text-body-secondary text-truncate" style="max-width:14rem">${esc(c.owner_name || '')}${App.currentProperty() ? '' : ' · ' + esc(c.property_name)}</div></td>
+            <td><div>${esc(App.CONCEPTS[c.concept])}${c.period ? ` <span class="text-body-secondary">${esc(c.period)}</span>` : ''}</div>${c.description && c.concept !== 'admin' ? `<div class="small text-body-secondary">${esc(c.description)}</div>` : ''}</td>
+            <td class="hide-xs">${App.fmtDate(c.due_date)}</td>
+            <td class="num fw-semibold">${money(c.amount)}</td>
+            <td>${c.paid_at ? App.badge('Pagado ' + App.fmtDate(c.paid_at), 'success') : c.due_date < today ? App.badge(`Vencido ${App.daysSince(c.due_date)} d`, 'danger') : App.badge('Por vencer', 'warning')}</td>
+            <td class="text-end text-nowrap">
+              ${c.paid_at
+                ? (App.canManage() ? `<button class="btn btn-sm btn-outline-secondary" data-unpay="${esc(c.id)}" title="Anular pago"><i class="bi bi-arrow-counterclockwise"></i></button>` : '')
+                : `<button class="btn btn-sm btn-outline-success" data-pay="${esc(c.id)}" title="Registrar pago"><i class="bi bi-check2"></i><span class="d-none d-md-inline ms-1">Pago</span></button>`}
+              ${App.canManage() ? `<button class="btn btn-sm btn-outline-danger" data-del="${esc(c.id)}" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+            </td>
+          </tr>`).join('') : '<tr><td colspan="6" class="empty">Sin cobros con estos filtros.</td></tr>';
+      }
+
+      async function newCharge() {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const pid = App.currentProperty() || App.properties[0].id;
+        const { el, form } = App.formDialog({
+          title: 'Nuevo cobro',
+          data: { property_id: pid, concept: 'ext', due_date: App.addDays(today, 15), period: today.slice(0, 7) },
+          fields: `
+            <div class="row g-2">
+              <div class="col-sm-6"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Unidad *</label><select name="unit_id" class="form-select" required></select></div>
+              <div class="col-sm-6"><label class="form-label small">Concepto</label><select name="concept" class="form-select">${Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control"></div>
+              <div class="col-12"><label class="form-label small">Descripción</label><input name="description" class="form-control" maxlength="200" placeholder="Fondo de obras de fachada"></div>
+              <div class="col-sm-6"><label class="form-label small">Valor (COP) *</label><input name="amount" type="number" min="1" step="1" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Vence *</label><input name="due_date" type="date" class="form-control" required></div>
+            </div>`,
+          onSave: async (d) => { await App.api('/charges', { method: 'POST', body: d }); App.toast('Cobro creado'); load(); },
+        });
+        const fill = async () => {
+          const us = await units(form.elements.property_id.value);
+          form.elements.unit_id.innerHTML = us.map((u) => `<option value="${esc(u.id)}" ${u.id === unit ? 'selected' : ''}>${esc(unitLabel(u))} · ${esc(u.owner_name || '')}</option>`).join('');
+        };
+        form.elements.property_id.addEventListener('change', fill);
+        fill().catch(App.fail);
+      }
+
+      function generate() {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const pid = App.currentProperty() || App.properties[0].id;
+        App.formDialog({
+          title: 'Generar cuotas de administración', submit: 'Generar',
+          data: { property_id: pid, period: today.slice(0, 7), due_date: today.slice(0, 8) + '10', mode: 'coefficient' },
+          fields: `
+            <p class="small text-body-secondary">Crea la cuota del periodo para todas las unidades del conjunto. Las que ya la tengan no se duplican.</p>
+            <div class="row g-2">
+              <div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Vence</label><input name="due_date" type="date" class="form-control" required></div>
+              <div class="col-12"><label class="form-label small">Cómo calcular</label>
+                <select name="mode" class="form-select">
+                  <option value="coefficient">Presupuesto mensual repartido por coeficiente</option>
+                  <option value="area">Valor por m² × área</option>
+                  <option value="fixed">Valor igual para cada unidad</option>
+                </select></div>
+              <div class="col-12"><label class="form-label small">Valor (COP)</label><input name="amount" type="number" min="1" step="1" class="form-control" required placeholder="Presupuesto total, valor por m² o valor fijo"></div>
+            </div>`,
+          onSave: async (d) => {
+            const r = await App.api('/charges/generate', { method: 'POST', body: d });
+            App.toast(`Cuotas creadas: ${r.created}${r.skipped ? ` · ya existían ${r.skipped}` : ''}`);
+            load();
+          },
+        });
+      }
+
+      function interest() {
+        if (!App.properties.length) return;
+        const pid = App.currentProperty() || App.properties[0].id;
+        App.formDialog({
+          title: 'Liquidar intereses de mora', submit: 'Liquidar',
+          data: { property_id: pid, rate: '2', period: today.slice(0, 7) },
+          fields: `
+            <p class="small text-body-secondary">Crea un cobro de intereses por unidad sobre su saldo vencido (sin incluir intereses anteriores). Verifica que la tasa no supere la máxima legal vigente.</p>
+            <div class="row g-2">
+              <div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Tasa mensual (%)</label><input name="rate" type="number" step="0.01" min="0.01" max="10" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control" required></div>
+            </div>`,
+          onSave: async (d) => { const r = await App.api('/charges/interest', { method: 'POST', body: d }); App.toast(`Intereses liquidados a ${r.created} unidades`); load(); },
+        });
+      }
+
+      $('rows').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        try {
+          if (b.dataset.pay) {
+            const c = items.find((x) => x.id === b.dataset.pay);
+            App.formDialog({
+              title: `Registrar pago · ${unitLabel(c)}`, submit: 'Registrar',
+              data: { paid_at: today },
+              fields: `<p class="small">${esc(App.CONCEPTS[c.concept])} ${esc(c.period || '')} por <strong>${money(c.amount)}</strong></p>
+                <div class="row g-2"><div class="col-sm-6"><label class="form-label small">Fecha de pago</label><input name="paid_at" type="date" class="form-control" required></div>
+                <div class="col-sm-6"><label class="form-label small">Referencia</label><input name="payment_ref" class="form-control" maxlength="120" placeholder="PSE, consignación…"></div></div>`,
+              onSave: async (d) => { await App.api(`/charges/${c.id}/pay`, { method: 'POST', body: d }); App.toast('Pago registrado'); load(); },
+            });
+          }
+          if (b.dataset.unpay && (await App.confirmAction('¿Anular el pago de este cobro?'))) { await App.api(`/charges/${b.dataset.unpay}/unpay`, { method: 'POST' }); load(); }
+          if (b.dataset.del && (await App.confirmAction('¿Eliminar este cobro?'))) { await App.api(`/charges/${b.dataset.del}`, { method: 'DELETE' }); load(); }
+        } catch (err) { App.fail(err); }
+      });
+      document.addEventListener('click', (ev) => { if (ev.target.closest('#clearUnit')) { unit = ''; history.replaceState(null, '', location.pathname); load(); } });
+      ['status', 'concept'].forEach((id) => $(id).addEventListener('change', load));
+      $('newBtn').addEventListener('click', newCharge);
+      $('genBtn').addEventListener('click', generate);
+      $('interestBtn').addEventListener('click', interest);
+      if (App.param('status')) $('status').value = App.param('status');
+      App.onProperty(load);
+      load();
+    })();
+  </script>
+</body>
+</html>

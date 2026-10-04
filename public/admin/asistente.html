@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Diwilo AI · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-2 px-lg-4 py-3" style="max-width:1400px">
+    <div class="chat-wrap">
+      <aside class="chat-history d-none d-md-flex">
+        <div class="p-2 border-bottom"><button class="btn btn-sm btn-primary w-100" id="newChat"><i class="bi bi-plus-lg me-1"></i>Nueva conversación</button></div>
+        <div class="eyebrow px-3 pt-3 pb-2">Sesiones de auditoría</div>
+        <div class="flex-grow-1 overflow-auto" id="history"></div>
+        <div class="p-3 border-top">
+          <div class="eyebrow mb-2">Canales enlazados</div>
+          <div class="d-flex flex-column gap-2 small" id="channels"></div>
+        </div>
+      </aside>
+
+      <section class="chat-main">
+        <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+          <button class="btn btn-sm btn-outline-secondary d-md-none" id="histBtn" aria-label="Conversaciones"><i class="bi bi-clock-history"></i></button>
+          <div class="m-ico" style="width:1.9rem;height:1.9rem;border-radius:.6rem;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#7C3AED,#10B981)"><i class="bi bi-stars"></i></div>
+          <div class="min-w-0 flex-grow-1"><div class="fw-bold text-truncate" id="chatTitle">Diwilo Residential AI</div>
+            <div class="eyebrow text-truncate" id="scope"></div></div>
+          <button class="btn btn-sm btn-outline-secondary d-md-none" id="newChat2" aria-label="Nueva"><i class="bi bi-plus-lg"></i></button>
+        </div>
+
+        <div class="chat-msgs" id="msgs"></div>
+
+        <form class="chat-input" id="form">
+          <textarea id="input" class="form-control" rows="1" maxlength="4000" placeholder="Pregunta sobre saldos, redacta circulares o audita PQRS…" aria-label="Mensaje"></textarea>
+          <button class="btn btn-primary" type="submit" id="send" aria-label="Enviar"><i class="bi bi-send-fill"></i></button>
+        </form>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      const me = await App.init('asistente', { title: 'Diwilo AI' });
+      if (!me) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      let chatId = null;
+      let chats = [];
+      let busy = false;
+
+      const SUGGEST = [
+        ['bi-cash-stack', 'Ver deudores crónicos', 'Calcula la morosidad y los atrasos más largos.', '¿Quiénes son los deudores con más días de atraso y cuánto deben? Dame un plan de cobro priorizado.'],
+        ['bi-bar-chart', 'Auditar PQRS', 'Detecta patrones de quejas y propón acciones.', 'Audita las PQRS abiertas: agrúpalas por categoría, detecta patrones y propón acciones concretas.'],
+        ['bi-file-earmark-text', 'Redactar cobranza', 'Circular cordial de cobro lista para enviar.', 'Redacta una circular cordial pero firme de cobro para las unidades en mora.'],
+        ['bi-door-open', 'Portería de la semana', 'Mudanzas, visitas y solicitudes pendientes.', 'Resume las solicitudes de portería pendientes y aprobadas y dime qué debo autorizar primero.'],
+        ['bi-calendar2-week', 'Reservas próximas', 'Ocupación de zonas comunes.', '¿Qué reservas de zonas comunes hay próximamente y cuáles están por aprobar?'],
+        ['bi-people', 'Convivencia', 'Recordatorio de normas para mudanzas y ruido.', 'Redacta un recordatorio de sana convivencia sobre horarios de mudanzas, ruido y uso de parqueaderos.'],
+      ];
+
+      async function loadChannels() {
+        try {
+          const b = await App.api('/business');
+          const row = (ok, icon, color, label) => `<div class="d-flex align-items-center gap-2 p-2 rounded border bg-body">
+            <span class="rounded-circle d-grid" style="width:22px;height:22px;place-items:center;background:${color}"><i class="bi ${icon} text-white" style="font-size:.7rem"></i></span>
+            <span class="fw-semibold flex-grow-1">${label}</span><span class="rounded-circle" style="width:8px;height:8px;background:${ok ? '#10B981' : '#9CA3AF'}" title="${ok ? 'Conectado' : 'Sin configurar'}"></span></div>`;
+          $('channels').innerHTML = row(b.integrations.whatsapp && b.business.wa_instance, 'bi-whatsapp', '#25D366', 'WhatsApp API') +
+            row(b.integrations.email, 'bi-envelope', '#EA4335', 'Correo Gmail') + row(b.integrations.ai, 'bi-stars', '#7C3AED', 'Workers AI');
+        } catch { /* sin permisos */ }
+      }
+
+      function scopeText() {
+        const pid = App.currentProperty();
+        $('scope').textContent = pid ? `Auditoría en ${App.propertyName(pid)}` : 'Todos los conjuntos de la administración';
+      }
+
+      async function loadHistory() {
+        chats = (await App.api('/ai/chats')).items;
+        $('history').innerHTML = chats.length ? chats.map((c) => `
+          <div class="h-item ${c.id === chatId ? 'active' : ''}" data-chat="${esc(c.id)}"><i class="bi bi-chat-text text-primary"></i><span>${esc(c.title)}</span>
+            <button class="btn btn-link btn-sm p-0 text-body-secondary" data-del-chat="${esc(c.id)}" aria-label="Borrar"><i class="bi bi-trash3"></i></button></div>`).join('')
+          : '<div class="small text-body-secondary px-3">Aún no hay conversaciones.</div>';
+      }
+
+      // Bloques ---INICIO--- … ---FIN--- se muestran como borrador con acciones.
+      function renderAnswer(text) {
+        const parts = text.split(/---\s*INICIO\s*---|---\s*FIN\s*---/);
+        return parts.map((p, i) => (i % 2 === 1
+          ? `<div class="draft-box">${esc(p.trim())}</div>
+             <div class="d-flex flex-wrap gap-2 mb-2">
+               <button class="btn btn-sm btn-primary" data-publish="${esc(encodeURIComponent(p.trim()))}"><i class="bi bi-megaphone me-1"></i>Publicar como comunicado</button>
+               <button class="btn btn-sm btn-outline-success" data-wa="${esc(encodeURIComponent(p.trim()))}"><i class="bi bi-whatsapp me-1"></i>Enviar por WhatsApp</button>
+               <button class="btn btn-sm btn-outline-secondary" data-copy="${esc(encodeURIComponent(p.trim()))}"><i class="bi bi-copy"></i></button>
+             </div>`
+          : App.md(p))).join('');
+      }
+
+      function bubble(role, content) {
+        const div = document.createElement('div');
+        div.className = `msg ${role === 'user' ? 'user' : 'ai'}`;
+        div.innerHTML = role === 'user'
+          ? `<div class="m-ico">${esc(App.initials(me.name || me.email))}</div><div class="bubble">${esc(content).replace(/\n/g, '<br>')}</div>`
+          : `<div class="m-ico"><i class="bi bi-stars"></i></div><div class="bubble">${content === null ? '<span class="typing"><span></span><span></span><span></span></span> <span class="small text-body-secondary">Consultando la base de la administración…</span>' : renderAnswer(content)}</div>`;
+        $('msgs').appendChild(div);
+        div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        return div;
+      }
+
+      function welcome() {
+        $('chatTitle').textContent = 'Diwilo Residential AI';
+        $('msgs').innerHTML = `
+          <div class="chat-welcome">
+            <div class="badge-ai"><span class="m-ico" style="width:2.3rem;height:2.3rem;border-radius:.8rem;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#7C3AED,#10B981)"><i class="bi bi-stars"></i></span>
+              <span class="text-start"><span class="d-block fw-bold small">Inteligencia Diwilo Residencial</span><span class="eyebrow text-primary">${esc(App.currentProperty() ? App.propertyName(App.currentProperty()) : 'Tu administración')}</span></span></div>
+            <h2 class="h4 mt-4 mb-1">¿En qué puedo ayudarte hoy?</h2>
+            <p class="small text-body-secondary mb-4">Leo en vivo la cartera, PQRS, portería, reservas y comunicados de tu administración. Elige una sugerencia o escribe tu propio requerimiento.</p>
+            <div class="row g-2">${SUGGEST.map(([icon, t, s, prompt]) => `<div class="col-sm-6 col-xl-4"><button type="button" class="suggest" data-prompt="${esc(prompt)}">
+              <i class="bi ${icon} fs-5"></i><div class="fw-semibold small mt-1">${t}</div><div class="small text-body-secondary">${s}</div></button></div>`).join('')}</div>
+          </div>`;
+      }
+
+      async function openChat(id) {
+        try {
+          const d = await App.api(`/ai/chats/${id}`);
+          chatId = id;
+          $('chatTitle').textContent = d.chat.title;
+          $('msgs').innerHTML = '';
+          d.messages.forEach((m) => bubble(m.role, m.content));
+          loadHistory();
+        } catch (err) { App.fail(err); }
+      }
+
+      function newChat() { chatId = null; welcome(); loadHistory(); $('input').focus(); }
+
+      async function send(text) {
+        text = (text || '').trim();
+        if (!text || busy) return;
+        busy = true; $('send').disabled = true;
+        if (!chatId) $('msgs').innerHTML = '';
+        bubble('user', text);
+        const wait = bubble('assistant', null);
+        try {
+          const r = await App.api('/ai/chat', { method: 'POST', body: { chat_id: chatId, message: text, property_id: App.currentProperty() || undefined } });
+          wait.remove();
+          bubble('assistant', r.answer);
+          if (!chatId) { chatId = r.chat_id; $('chatTitle').textContent = text.slice(0, 60); }
+          loadHistory();
+        } catch (err) {
+          wait.querySelector('.bubble').innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${esc(err.message)}</span>`;
+        }
+        busy = false; $('send').disabled = false; $('input').focus();
+      }
+
+      // Enviar un borrador por WhatsApp a una unidad elegida.
+      async function waDialog(text) {
+        const { items } = await App.api('/units' + App.qs());
+        const withPhone = items.filter((u) => u.owner_phone);
+        if (!withPhone.length) return App.toast('No hay unidades con celular registrado', 'warning');
+        const { form } = App.formDialog({
+          title: 'Enviar por WhatsApp', submit: 'Elegir',
+          fields: `<label class="form-label small">Unidad</label><select name="unit" class="form-select">${withPhone.map((u) => `<option value="${esc(u.id)}">${esc(App.unitLabel(u))} · ${esc(u.owner_name || '')}${u.overdue > 0 ? ' · en mora' : ''}</option>`).join('')}</select>
+            <p class="small text-body-secondary mt-2 mb-0">Para enviarlo a todos, usa “Publicar como comunicado” y luego “Enviar a residentes”.</p>`,
+          onSave: async (d) => { App.messageDialog(withPhone.find((u) => u.id === d.unit), { text }); },
+        });
+        form.elements.unit.focus();
+      }
+
+      $('msgs').addEventListener('click', async (ev) => {
+        const s = ev.target.closest('[data-prompt]');
+        if (s) return send(s.dataset.prompt);
+        const b = ev.target.closest('button');
+        if (!b) return;
+        const text = decodeURIComponent(b.dataset.publish || b.dataset.wa || b.dataset.copy || '');
+        if (b.dataset.publish) {
+          try { sessionStorage.setItem('cdr_draft', text); } catch { /* sin almacenamiento */ }
+          location.href = '/admin/comunicados';
+        }
+        if (b.dataset.wa) waDialog(text).catch(App.fail);
+        if (b.dataset.copy) { try { await navigator.clipboard.writeText(text); App.toast('Texto copiado'); } catch (err) { App.fail(err); } }
+      });
+      $('history').addEventListener('click', async (ev) => {
+        const del = ev.target.closest('[data-del-chat]');
+        if (del) {
+          ev.stopPropagation();
+          if (!(await App.confirmAction('¿Borrar esta conversación?'))) return;
+          try { await App.api(`/ai/chats/${del.dataset.delChat}`, { method: 'DELETE' }); if (del.dataset.delChat === chatId) newChat(); else loadHistory(); } catch (err) { App.fail(err); }
+          return;
+        }
+        const h = ev.target.closest('[data-chat]');
+        if (h) openChat(h.dataset.chat);
+      });
+      $('histBtn').addEventListener('click', () => {
+        const { el, hide } = App.modal(`<div class="modal-header"><h5 class="modal-title">Conversaciones</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+          <div class="list-group list-group-flush">${chats.map((c) => `<button class="list-group-item list-group-item-action" data-chat="${esc(c.id)}">${esc(c.title)}<div class="small text-body-secondary">${App.fmtDate(c.updated_at)}</div></button>`).join('') || '<div class="empty">Sin conversaciones</div>'}</div>`);
+        el.addEventListener('click', (ev) => { const b = ev.target.closest('[data-chat]'); if (b) { hide(); openChat(b.dataset.chat); } });
+      });
+      $('newChat').addEventListener('click', newChat);
+      $('newChat2').addEventListener('click', newChat);
+      $('form').addEventListener('submit', (ev) => { ev.preventDefault(); const t = $('input').value; $('input').value = ''; $('input').style.height = ''; send(t); });
+      $('input').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $('form').requestSubmit(); } });
+      $('input').addEventListener('input', (ev) => { ev.target.style.height = 'auto'; ev.target.style.height = Math.min(ev.target.scrollHeight, 160) + 'px'; });
+      App.onProperty(() => { scopeText(); if (!chatId) welcome(); });
+
+      scopeText();
+      welcome();
+      loadChannels();
+      loadHistory().catch(App.fail);
+      const q = App.param('q');
+      if (q) { history.replaceState(null, '', location.pathname); send(q); }
+    })();
+  </script>
+</body>
+</html>

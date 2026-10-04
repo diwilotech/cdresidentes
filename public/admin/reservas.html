@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reservas · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Áreas comunes</div>
+        <h1 class="page-title">Reservas de zonas comunes</h1>
+        <p class="page-sub">Salón social, BBQ, parqueadero de visitantes y más: tarifas, aprobaciones y pagos.</p>
+      </div>
+      <button class="btn btn-primary" id="newBtn"><i class="bi bi-calendar-plus me-1"></i>Nueva reserva</button>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-xl-8">
+        <div class="card mb-3">
+          <div class="card-header d-flex align-items-center gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="prev" aria-label="Mes anterior"><i class="bi bi-chevron-left"></i></button>
+            <span class="fw-bold text-capitalize flex-grow-1 text-center" id="monthLabel"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="next" aria-label="Mes siguiente"><i class="bi bi-chevron-right"></i></button>
+          </div>
+          <div class="card-body"><div class="cal" id="cal"></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="bi bi-list-check me-2 text-primary"></i>Reservas del mes <span class="text-body-secondary fw-normal" id="count"></span></div>
+          <div class="list-group list-group-flush" id="list"></div>
+        </div>
+      </div>
+      <div class="col-xl-4">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-tags me-2 text-primary"></i>Zonas y tarifas</span>
+            <button class="btn btn-sm btn-outline-primary manager" id="newAmenity"><i class="bi bi-plus-lg"></i> Zona</button></div>
+          <div class="list-group list-group-flush" id="amenities"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('reservas'))) return;
+      const { esc, money, unitLabel } = App;
+      const $ = (id) => document.getElementById(id);
+      if (!App.canManage()) document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
+      const ST = { pending: ['Por aprobar', 'warning'], approved: ['Aprobada', 'success'], rejected: ['Rechazada', 'secondary'], cancelled: ['Cancelada', 'secondary'] };
+      const UNIT = { evento: 'evento', hora: 'hora', dia: 'día' };
+      let month = App.todayLocal().slice(0, 7);
+      let amenities = [];
+      let bookings = [];
+
+      async function loadAmenities() {
+        amenities = (await App.api('/amenities' + App.qs())).items;
+        $('amenities').innerHTML = amenities.length ? amenities.map((a) => `
+          <div class="list-group-item d-flex align-items-center gap-2 ${a.active ? '' : 'opacity-50'}">
+            <div class="flex-grow-1 min-w-0"><div class="fw-semibold">${esc(a.name)}</div>
+              <div class="small text-body-secondary">${App.currentProperty() ? '' : esc(a.property_name) + ' · '}${a.capacity ? `${a.capacity} personas` : ''}</div></div>
+            <span class="mono small fw-semibold">${money(a.fee)}<span class="text-body-secondary">/${UNIT[a.fee_unit]}</span></span>
+            ${App.canManage() ? `<button class="btn btn-sm btn-outline-secondary" data-amenity="${esc(a.id)}"><i class="bi bi-pencil"></i></button>` : ''}
+          </div>`).join('') : '<div class="empty small">Aún no hay zonas comunes. Crea la primera para recibir reservas.</div>';
+      }
+
+      async function loadBookings() {
+        let d;
+        try { d = await App.api('/bookings' + App.qs({ month })); } catch (err) { return App.fail(err); }
+        bookings = d.items;
+        const [y, m] = month.split('-').map(Number);
+        $('monthLabel').textContent = `${App.MESES_LARGOS[m - 1]} ${y}`;
+        const first = new Date(Date.UTC(y, m - 1, 1));
+        const start = new Date(first); start.setUTCDate(1 - first.getUTCDay());
+        const today = App.todayLocal();
+        let html = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'].map((d) => `<div class="dow">${d}</div>`).join('');
+        for (let i = 0; i < 42; i++) {
+          const d = new Date(start); d.setUTCDate(start.getUTCDate() + i);
+          const iso = d.toISOString().slice(0, 10);
+          const inMonth = iso.slice(0, 7) === month;
+          if (i >= 35 && !inMonth) break;
+          const evs = bookings.filter((b) => b.date === iso && ['pending', 'approved'].includes(b.status));
+          html += `<div class="day ${inMonth ? '' : 'out'} ${iso === today ? 'today' : ''}" ${inMonth ? `data-day="${iso}"` : ''}><span class="n">${d.getUTCDate()}</span>
+            ${evs.map((b) => `<span class="ev ${b.status}" title="${esc(b.amenity_name)} ${esc(b.start_time)}">${esc(b.start_time)} ${esc(b.amenity_name)}</span>`).join('')}</div>`;
+        }
+        $('cal').innerHTML = html;
+        $('count').textContent = `(${bookings.length})`;
+        $('list').innerHTML = bookings.length ? bookings.map((b) => `
+          <div class="list-group-item d-flex flex-wrap align-items-center gap-2">
+            <div class="flex-grow-1 min-w-0"><div class="fw-semibold">${esc(b.amenity_name)} · ${App.fmtDate(b.date, { weekday: true })} ${esc(b.start_time)}–${esc(b.end_time)}</div>
+              <div class="small text-body-secondary">${b.number ? esc(unitLabel(b)) + ' · ' : ''}${esc(b.holder || b.owner_name || '')} · ${money(b.amount)} ${b.paid ? '<i class="bi bi-check-circle-fill text-success"></i> pagada' : '<span class="text-danger">sin pagar</span>'}</div></div>
+            ${App.badge(ST[b.status][0], ST[b.status][1])}
+            ${b.status === 'pending' ? `<button class="btn btn-sm btn-outline-success" data-set="approved" data-id="${esc(b.id)}" title="Aprobar"><i class="bi bi-check2"></i></button>
+              <button class="btn btn-sm btn-outline-danger" data-set="rejected" data-id="${esc(b.id)}" title="Rechazar"><i class="bi bi-x"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(b.id)}"><i class="bi bi-pencil"></i></button>
+          </div>`).join('') : '<div class="empty small">Sin reservas este mes.</div>';
+      }
+
+      function editAmenity(a) {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const { el } = App.formDialog({
+          title: a ? 'Editar zona común' : 'Nueva zona común',
+          data: a || { property_id: App.currentProperty() || App.properties[0].id, fee_unit: 'evento', active: 1, fee: 0 },
+          extraFooter: a ? '<button type="button" class="btn btn-outline-danger me-auto" data-del><i class="bi bi-trash"></i></button>' : '',
+          fields: `
+            <div class="row g-2">
+              <div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions()}</select></div>
+              <div class="col-12"><label class="form-label small">Nombre *</label><input name="name" class="form-control" required maxlength="120" placeholder="Salón social A"></div>
+              <div class="col-6"><label class="form-label small">Tarifa (COP)</label><input name="fee" type="number" min="0" step="1000" class="form-control"></div>
+              <div class="col-6"><label class="form-label small">Por</label><select name="fee_unit" class="form-select"><option value="evento">Evento</option><option value="hora">Hora</option><option value="dia">Día</option></select></div>
+              <div class="col-6"><label class="form-label small">Capacidad</label><input name="capacity" type="number" min="0" class="form-control"></div>
+              <div class="col-6 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="active" id="act"><label class="form-check-label" for="act">Disponible</label></div></div>
+              <div class="col-12"><label class="form-label small">Reglamento de uso</label><textarea name="rules" class="form-control" rows="3" maxlength="2000"></textarea></div>
+            </div>`,
+          onSave: async (d) => {
+            if (a) await App.api(`/amenities/${a.id}`, { method: 'PUT', body: d });
+            else await App.api('/amenities', { method: 'POST', body: d });
+            App.toast('Zona guardada'); loadAmenities();
+          },
+        });
+        el.querySelector('[data-del]')?.addEventListener('click', async () => {
+          if (!(await App.confirmAction('¿Eliminar esta zona y sus reservas?'))) return;
+          try { await App.api(`/amenities/${a.id}`, { method: 'DELETE' }); bootstrap.Modal.getInstance(el).hide(); loadAmenities(); loadBookings(); } catch (err) { App.fail(err); }
+        });
+      }
+
+      function editBooking(b, day) {
+        const active = amenities.filter((a) => a.active);
+        if (!active.length) return App.toast('Primero crea una zona común', 'warning');
+        const first = b ? amenities.find((a) => a.id === b.amenity_id) : active[0];
+        const { el, form } = App.formDialog({
+          title: b ? 'Editar reserva' : 'Nueva reserva',
+          data: b ? { ...b, property_id: first?.property_id } : { amenity_id: first.id, property_id: first.property_id, date: day || App.todayLocal(), start_time: '14:00', end_time: '18:00', status: 'pending' },
+          extraFooter: b ? '<button type="button" class="btn btn-outline-danger me-auto" data-del><i class="bi bi-trash"></i></button>' : '',
+          fields: `
+            <div class="row g-2">
+              <div class="col-12"><label class="form-label small">Zona</label><select name="amenity_id" class="form-select">${amenities.map((a) => `<option value="${esc(a.id)}" data-prop="${esc(a.property_id)}">${esc(a.name)} · ${money(a.fee)}/${UNIT[a.fee_unit]}${App.currentProperty() ? '' : ' · ' + esc(a.property_name)}</option>`).join('')}</select></div>
+              <input type="hidden" name="property_id">
+              <div class="col-12"><label class="form-label small">Unidad</label><select name="unit_id" class="form-select"></select></div>
+              <div class="col-sm-4"><label class="form-label small">Fecha</label><input name="date" type="date" class="form-control" required></div>
+              <div class="col-6 col-sm-4"><label class="form-label small">Desde</label><input name="start_time" type="time" class="form-control" required></div>
+              <div class="col-6 col-sm-4"><label class="form-label small">Hasta</label><input name="end_time" type="time" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Responsable</label><input name="holder" class="form-control" maxlength="120"></div>
+              <div class="col-sm-6"><label class="form-label small">Valor (vacío = tarifa)</label><input name="amount" type="number" min="0" class="form-control"></div>
+              <div class="col-sm-6"><label class="form-label small">Estado</label><select name="status" class="form-select">${Object.entries(ST).map(([k, [v]]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+              <div class="col-sm-6 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="paid" id="paid"><label class="form-check-label" for="paid">Pagada</label></div></div>
+              <div class="col-12"><label class="form-label small">Notas</label><input name="notes" class="form-control" maxlength="1000"></div>
+            </div>`,
+          onSave: async (d) => {
+            delete d.property_id;
+            if (b) await App.api(`/bookings/${b.id}`, { method: 'PUT', body: d });
+            else await App.api('/bookings', { method: 'POST', body: d });
+            App.toast('Reserva guardada'); loadBookings();
+          },
+        });
+        const syncProp = () => { form.elements.property_id.value = form.elements.amenity_id.selectedOptions[0].dataset.prop; form.elements.property_id.dispatchEvent(new Event('change')); };
+        form.elements.amenity_id.addEventListener('change', syncProp);
+        App.bindUnitSelect(form, { selected: b?.unit_id || '' });
+        el.querySelector('[data-del]')?.addEventListener('click', async () => {
+          if (!(await App.confirmAction('¿Eliminar esta reserva?'))) return;
+          try { await App.api(`/bookings/${b.id}`, { method: 'DELETE' }); bootstrap.Modal.getInstance(el).hide(); loadBookings(); } catch (err) { App.fail(err); }
+        });
+      }
+
+      const shift = (n) => { const d = new Date(month + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); month = d.toISOString().slice(0, 7); loadBookings(); };
+      $('prev').addEventListener('click', () => shift(-1));
+      $('next').addEventListener('click', () => shift(1));
+      $('cal').addEventListener('click', (ev) => { const d = ev.target.closest('[data-day]'); if (d) editBooking(null, d.dataset.day); });
+      $('amenities').addEventListener('click', (ev) => { const b = ev.target.closest('[data-amenity]'); if (b) editAmenity(amenities.find((a) => a.id === b.dataset.amenity)); });
+      $('list').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.dataset.edit) return editBooking(bookings.find((x) => x.id === b.dataset.edit));
+        if (b.dataset.set) { try { await App.api(`/bookings/${b.dataset.id}`, { method: 'PUT', body: { status: b.dataset.set } }); loadBookings(); } catch (err) { App.fail(err); } }
+      });
+      $('newBtn').addEventListener('click', () => editBooking(null));
+      $('newAmenity').addEventListener('click', () => editAmenity(null));
+      App.onProperty(() => { loadAmenities().catch(App.fail); loadBookings(); });
+      await loadAmenities().catch(App.fail);
+      loadBookings();
+    })();
+  </script>
+</body>
+</html>

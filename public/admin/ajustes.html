@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ajustes · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1100px">
+    <div class="mb-3">
+      <div class="eyebrow">Configuración</div>
+      <h1 class="page-title">Ajustes</h1>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-header"><i class="bi bi-building-gear me-2 text-primary"></i>Datos de la administración</div>
+          <div class="card-body">
+            <div class="d-flex align-items-center gap-3 mb-3">
+              <div class="prop-logo" id="logo"><i class="bi bi-buildings"></i></div>
+              <label class="btn btn-sm btn-outline-secondary mb-0 manager"><i class="bi bi-upload me-1"></i>Subir logo<input type="file" id="logoFile" class="d-none" accept="image/png,image/jpeg,image/webp"></label>
+            </div>
+            <form id="bizForm" novalidate>
+              <div class="mb-2"><label class="form-label small">Nombre *</label><input name="name" class="form-control" required maxlength="120"></div>
+              <div class="row g-2 mb-2">
+                <div class="col-sm-6"><label class="form-label small">Correo</label><input name="email" type="email" class="form-control"></div>
+                <div class="col-sm-6"><label class="form-label small">Teléfono</label><input name="phone" class="form-control" maxlength="30"></div>
+              </div>
+              <div class="row g-2 mb-3">
+                <div class="col-sm-6"><label class="form-label small">Zona horaria</label><input name="timezone" class="form-control" maxlength="60" placeholder="America/Bogota"></div>
+                <div class="col-sm-6"><label class="form-label small">Instancia de WhatsApp (Evolution API)</label><input name="wa_instance" class="form-control" maxlength="80"></div>
+              </div>
+              <div class="small text-body-secondary mb-3" id="link"></div>
+              <button class="btn btn-primary manager" type="submit">Guardar</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-plug me-2 text-primary"></i>Integraciones</div>
+          <div class="card-body" id="integrations"></div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-people me-2 text-primary"></i>Equipo</span>
+            <button class="btn btn-sm btn-primary manager" id="addMember"><i class="bi bi-person-plus me-1"></i>Agregar</button></div>
+          <div class="list-group list-group-flush" id="team"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('ajustes'))) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const manage = App.canManage();
+      if (!manage) {
+        document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
+        document.querySelectorAll('#bizForm input').forEach((i) => (i.disabled = true));
+      }
+
+      async function loadBusiness() {
+        const d = await App.api('/business');
+        App.fillForm($('bizForm'), d.business);
+        if (d.business.logo) $('logo').innerHTML = `<img src="${esc(d.business.logo)}" alt="">`;
+        $('link').innerHTML = `Link de ingreso: <code>${esc(location.origin)}/</code> · Panel: <code>${esc(location.origin)}/${esc(d.business.slug)}/admin</code>`;
+        const i = d.integrations;
+        const st = (ok) => ok ? '<span class="badge text-bg-success">Configurado</span>' : '<span class="badge text-bg-secondary">Sin configurar</span>';
+        $('integrations').innerHTML = `
+          <div class="d-flex justify-content-between align-items-center mb-2"><span><i class="bi bi-whatsapp text-success me-2"></i>WhatsApp (Evolution API)</span>${st(i.whatsapp && d.business.wa_instance)}</div>
+          ${manage ? `<form class="input-group input-group-sm mb-3" id="waTest"><input name="phone" class="form-control" placeholder="Celular para prueba" required><button class="btn btn-outline-secondary" type="submit">Probar</button></form>` : ''}
+          <div class="d-flex justify-content-between align-items-center mb-2"><span><i class="bi bi-envelope text-danger me-2"></i>Correo (SMTP Gmail)</span>${st(i.email)}</div>
+          ${manage ? `<form class="input-group input-group-sm mb-3" id="mailTest"><input name="to" type="email" class="form-control" placeholder="Correo para prueba" required><button class="btn btn-outline-secondary" type="submit">Probar</button></form>` : ''}
+          <div class="d-flex justify-content-between align-items-center"><span><i class="bi bi-stars text-ai me-2"></i>Diwilo AI (Workers AI)</span>${st(i.ai)}</div>
+          <p class="small text-body-secondary mt-3 mb-0">El servidor de WhatsApp, la cuenta de Gmail y la suscripción se configuran desde Diwilo. Aquí solo va la instancia de WhatsApp de tu administración.</p>`;
+        if (manage) {
+          App.onSubmit($('waTest'), async (f) => { await App.api('/integrations/whatsapp/test', { method: 'POST', body: f }); App.toast('Mensaje de prueba enviado'); });
+          App.onSubmit($('mailTest'), async (f) => { await App.api('/integrations/email/test', { method: 'POST', body: f }); App.toast('Correo de prueba enviado'); });
+        }
+      }
+
+      async function loadTeam() {
+        const d = await App.api('/team');
+        $('team').innerHTML = d.items.map((u) => `
+          <div class="list-group-item d-flex align-items-center gap-3">
+            <span class="avatar">${esc(App.initials(u.name || u.email))}</span>
+            <div class="flex-grow-1 min-w-0"><div class="fw-semibold text-truncate">${esc(u.name || u.email)}${u.id === d.me ? ' <span class="text-body-secondary small">(tú)</span>' : ''}</div>
+              <div class="small text-body-secondary text-truncate">${esc(u.email)} · ${esc(App.ROLE[u.role])}${u.has_password ? '' : ' · <span class="text-warning">sin contraseña</span>'}</div></div>
+            ${d.canManage && u.role !== 'owner' && u.id !== d.me ? `
+              <button class="btn btn-sm btn-outline-secondary" data-invite="${esc(u.id)}" title="Link para crear contraseña"><i class="bi bi-link-45deg"></i></button>
+              <button class="btn btn-sm btn-outline-danger" data-remove="${esc(u.id)}" title="Quitar"><i class="bi bi-person-dash"></i></button>` : ''}
+          </div>`).join('');
+      }
+
+      App.onSubmit($('bizForm'), async (d) => { await App.api('/business', { method: 'PUT', body: d }); App.toast('Datos guardados'); });
+      $('logoFile').addEventListener('change', async (ev) => {
+        const fd = new FormData();
+        fd.append('file', ev.target.files[0]);
+        try { const r = await App.api('/business/logo', { method: 'POST', form: fd }); $('logo').innerHTML = `<img src="${esc(r.logo)}" alt="">`; App.toast('Logo actualizado'); } catch (err) { App.fail(err); }
+      });
+      $('addMember').addEventListener('click', () => App.formDialog({
+        title: 'Agregar al equipo', submit: 'Agregar',
+        data: { role: 'staff' },
+        fields: `
+          <div class="mb-2"><label class="form-label small">Correo *</label><input name="email" type="email" class="form-control" required></div>
+          <div class="mb-2"><label class="form-label small">Nombre</label><input name="name" class="form-control" maxlength="100"></div>
+          <label class="form-label small">Rol</label><select name="role" class="form-select"><option value="staff">Equipo (portería, auxiliar)</option><option value="admin">Administrador</option></select>`,
+        onSave: async (d) => {
+          const r = await App.api('/team', { method: 'POST', body: d });
+          loadTeam();
+          if (r.inviteUrl) App.inviteDialog(r.inviteUrl, 'Link para crear la contraseña');
+          else App.toast('Agregado: ya tiene contraseña, puede entrar.');
+        },
+      }));
+      $('team').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        try {
+          if (b.dataset.invite) { const r = await App.api(`/team/${b.dataset.invite}/invite`, { method: 'POST' }); App.inviteDialog(r.inviteUrl); }
+          if (b.dataset.remove && (await App.confirmAction('¿Quitar a esta persona del equipo?'))) { await App.api(`/team/${b.dataset.remove}`, { method: 'DELETE' }); loadTeam(); }
+        } catch (err) { App.fail(err); }
+      });
+
+      loadBusiness().catch(App.fail);
+      loadTeam().catch(App.fail);
+    })();
+  </script>
+</body>
+</html>

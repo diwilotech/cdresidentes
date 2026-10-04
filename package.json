@@ -1,0 +1,15 @@
+{
+  "name": "cdresidentes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:migrate:local": "wrangler d1 migrations apply cdresidentes --local",
+    "db:seed:local": "wrangler d1 execute cdresidentes --local --file=scripts/seed.sql",
+    "db:migrate:remote": "wrangler d1 migrations apply cdresidentes --remote",
+    "deploy": "wrangler d1 migrations apply cdresidentes --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

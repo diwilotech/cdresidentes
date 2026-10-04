@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portería · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Control operativo</div>
+        <h1 class="page-title">Solicitudes y portería</h1>
+        <p class="page-sub">Mudanzas programadas, visitas, mantenimiento, domicilios y alertas de seguridad, con aprobación de la administración.</p>
+      </div>
+      <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Nueva solicitud</button>
+    </div>
+
+    <ul class="nav nav-pills mb-3 gap-1" id="tabs">
+      <li class="nav-item"><button class="nav-link active" data-status="">Todas</button></li>
+      <li class="nav-item"><button class="nav-link" data-status="pending">Pendientes</button></li>
+      <li class="nav-item"><button class="nav-link" data-status="approved">Aprobadas</button></li>
+      <li class="nav-item"><button class="nav-link" data-status="done">Completadas</button></li>
+      <li class="nav-item"><button class="nav-link" data-status="rejected">Rechazadas</button></li>
+    </ul>
+
+    <div class="card">
+      <div class="filters">
+        <div class="input-group grow"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="search" id="q" class="form-control" placeholder="Buscar asunto, unidad o propietario"></div>
+        <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
+      </div>
+      <div class="list-group list-group-flush" id="rows"></div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('solicitudes', { title: 'Portería' }))) return;
+      const { esc, unitLabel } = App;
+      const $ = (id) => document.getElementById(id);
+      const KINDS = { mudanza: ['Mudanza', 'bi-truck'], visita: ['Visita', 'bi-person-badge'], mantenimiento: ['Mantenimiento', 'bi-tools'], domicilio: ['Domicilio / correspondencia', 'bi-box-seam'], alarma: ['Alarma / seguridad', 'bi-bell'], otro: ['Otro', 'bi-three-dots'] };
+      const ST = { pending: ['Pendiente', 'warning'], approved: ['Aprobada', 'primary'], rejected: ['Rechazada', 'secondary'], done: ['Completada', 'success'] };
+      $('kind').innerHTML += Object.entries(KINDS).map(([k, [v]]) => `<option value="${k}">${v}</option>`).join('');
+      let status = '';
+      let items = [];
+      let timer;
+
+      async function load() {
+        let d;
+        try { d = await App.api('/requests' + App.qs({ status, kind: $('kind').value, q: $('q').value.trim() })); } catch (err) { return App.fail(err); }
+        items = d.items;
+        $('rows').innerHTML = items.length ? items.map((r) => `
+          <div class="list-group-item py-3"><div class="d-flex gap-3">
+            <div class="kpi-icon flex-none" style="width:2.4rem;height:2.4rem;border-radius:.7rem;display:grid;place-items:center;background:var(--cdr-accent-soft);color:var(--cdr-accent)"><i class="bi ${KINDS[r.kind][1]}"></i></div>
+            <div class="flex-grow-1 min-w-0">
+              <div class="d-flex flex-wrap gap-2 align-items-center"><span class="fw-semibold">${esc(r.title)}</span>${App.badge(ST[r.status][0], ST[r.status][1])}</div>
+              <div class="small text-body-secondary">${esc(KINDS[r.kind][0])}${r.number ? ' · ' + esc(unitLabel(r)) : ''}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}${r.scheduled_at ? ' · <i class="bi bi-clock"></i> ' + App.fmtDateTime(r.scheduled_at) : ''}</div>
+              ${r.detail ? `<div class="small mt-1">${esc(r.detail)}</div>` : ''}
+              ${r.resolution ? `<div class="small mt-1 text-primary"><i class="bi bi-reply me-1"></i>${esc(r.resolution)}</div>` : ''}
+            </div>
+            <div class="d-flex flex-column flex-sm-row gap-1 align-items-end align-items-sm-start">
+              ${r.status === 'pending' ? `<button class="btn btn-sm btn-outline-success" data-set="approved" data-id="${esc(r.id)}"><i class="bi bi-check2"></i><span class="d-none d-md-inline ms-1">Aprobar</span></button>
+                <button class="btn btn-sm btn-outline-danger" data-set="rejected" data-id="${esc(r.id)}"><i class="bi bi-x"></i><span class="d-none d-md-inline ms-1">Rechazar</span></button>` : ''}
+              ${r.status === 'approved' ? `<button class="btn btn-sm btn-outline-primary" data-set="done" data-id="${esc(r.id)}"><i class="bi bi-check2-all"></i><span class="d-none d-md-inline ms-1">Completada</span></button>` : ''}
+              <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(r.id)}"><i class="bi bi-pencil"></i></button>
+            </div>
+          </div></div>`).join('') : '<div class="empty">Sin solicitudes.</div>';
+      }
+
+      async function edit(r) {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const { el, form } = App.formDialog({
+          title: r ? 'Editar solicitud' : 'Nueva solicitud', size: 'modal-lg',
+          data: r ? { ...r, scheduled_at: r.scheduled_at || '' } : { property_id: App.currentProperty() || App.properties[0].id, kind: 'visita', status: 'pending' },
+          extraFooter: r && App.canManage() ? '<button type="button" class="btn btn-outline-danger me-auto" data-del><i class="bi bi-trash"></i></button>' : '',
+          fields: `
+            <div class="row g-2">
+              <div class="col-sm-6"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select" required>${App.propertyOptions()}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Unidad</label><select name="unit_id" class="form-select"></select></div>
+              <div class="col-sm-6"><label class="form-label small">Tipo</label><select name="kind" class="form-select">${Object.entries(KINDS).map(([k, [v]]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Fecha y hora</label><input name="scheduled_at" type="datetime-local" class="form-control"></div>
+              <div class="col-12"><label class="form-label small">Asunto *</label><input name="title" class="form-control" required maxlength="160" placeholder="Mudanza de entrada · Visita técnica gas…"></div>
+              <div class="col-12"><label class="form-label small">Detalle</label><textarea name="detail" class="form-control" rows="3" maxlength="3000" placeholder="Placa del vehículo, nombre del visitante, empresa…"></textarea></div>
+              <div class="col-sm-4"><label class="form-label small">Estado</label><select name="status" class="form-select">${Object.entries(ST).map(([k, [v]]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+              <div class="col-sm-8"><label class="form-label small">Respuesta / bitácora</label><input name="resolution" class="form-control" maxlength="2000"></div>
+            </div>
+            ${r ? '<div class="eyebrow mt-3 mb-1">Evidencias</div><div id="files"></div>' : ''}`,
+          onSave: async (d) => {
+            if (r) await App.api(`/requests/${r.id}`, { method: 'PUT', body: d });
+            else await App.api('/requests', { method: 'POST', body: d });
+            App.toast('Solicitud guardada'); load();
+          },
+        });
+        App.bindUnitSelect(form, { selected: r?.unit_id || '' });
+        if (r) App.attachments(el.querySelector('#files'), 'request', r.id);
+        el.querySelector('[data-del]')?.addEventListener('click', async () => {
+          if (!(await App.confirmAction('¿Eliminar esta solicitud?'))) return;
+          try { await App.api(`/requests/${r.id}`, { method: 'DELETE' }); bootstrap.Modal.getInstance(el).hide(); load(); } catch (err) { App.fail(err); }
+        });
+      }
+
+      $('rows').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.dataset.edit) return edit(items.find((x) => x.id === b.dataset.edit));
+        if (b.dataset.set) {
+          try { await App.api(`/requests/${b.dataset.id}`, { method: 'PUT', body: { status: b.dataset.set } }); App.toast(ST[b.dataset.set][0]); load(); } catch (err) { App.fail(err); }
+        }
+      });
+      $('tabs').addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-status]');
+        if (!b) return;
+        $('tabs').querySelectorAll('.nav-link').forEach((x) => x.classList.toggle('active', x === b));
+        status = b.dataset.status; load();
+      });
+      $('kind').addEventListener('change', load);
+      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      $('newBtn').addEventListener('click', () => edit(null));
+      App.onProperty(load);
+      load();
+    })();
+  </script>
+</body>
+</html>

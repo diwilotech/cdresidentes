@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conjuntos · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Registro de copropiedades</div>
+        <h1 class="page-title">Conjuntos <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
+        <p class="page-sub">Datos de cada conjunto o edificio: NIT, dirección, torres, logo y documentos.</p>
+      </div>
+      <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Nuevo conjunto</button>
+    </div>
+    <div class="row g-3" id="list"></div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('conjuntos'))) return;
+      const { esc, money } = App;
+      const $ = (id) => document.getElementById(id);
+      if (!App.canManage()) $('newBtn').classList.add('d-none');
+
+      const FIELDS = `
+        <div class="row g-2">
+          <div class="col-12"><label class="form-label small">Nombre del conjunto *</label><input name="name" class="form-control" required maxlength="120" placeholder="Ej. Conjunto Altos de la Colina"></div>
+          <div class="col-sm-6"><label class="form-label small">NIT</label><input name="nit" class="form-control" maxlength="30"></div>
+          <div class="col-sm-6"><label class="form-label small">Ciudad</label><input name="city" class="form-control" maxlength="80"></div>
+          <div class="col-12"><label class="form-label small">Dirección</label><input name="address" class="form-control" maxlength="200"></div>
+          <div class="col-sm-6"><label class="form-label small">Teléfonos administrativos</label><input name="phone" class="form-control" maxlength="60"></div>
+          <div class="col-sm-6"><label class="form-label small">Correo de la administración</label><input name="email" type="email" class="form-control"></div>
+          <div class="col-sm-8"><label class="form-label small">Torres / bloques</label><input name="towers" class="form-control" maxlength="300" placeholder="Torre A, Torre B, Torre C"></div>
+          <div class="col-sm-4"><label class="form-label small">Cuota por m² (opcional)</label><input name="admin_fee" type="number" min="0" step="1" class="form-control"></div>
+          <div class="col-12"><label class="form-label small">Notas</label><textarea name="notes" class="form-control" rows="2" maxlength="2000"></textarea></div>
+          <div class="col-sm-6"><label class="form-label small">Estado</label><select name="status" class="form-select"><option value="active">Activo</option><option value="archived">Archivado</option></select></div>
+        </div>`;
+
+      async function reloadProps() {
+        App.properties = (await App.api('/properties')).items;
+        document.querySelectorAll('[data-property-select]').forEach((s) => (s.innerHTML = App.propertyOptions(App.currentProperty(), { blank: true })));
+      }
+
+      async function load() {
+        const items = App.properties;
+        $('count').textContent = `(${items.length})`;
+        $('list').innerHTML = items.length ? items.map((p) => `
+          <div class="col-md-6 col-xl-4"><div class="card h-100 ${p.status === 'archived' ? 'opacity-50' : ''}"><div class="card-body">
+            <div class="d-flex gap-3 align-items-start">
+              <div class="prop-logo">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : '<i class="bi bi-building"></i>'}</div>
+              <div class="flex-grow-1" style="min-width:0">
+                <div class="fw-bold">${esc(p.name)}</div>
+                <div class="small text-body-secondary">${esc([p.nit && 'NIT ' + p.nit, p.city].filter(Boolean).join(' · ') || '—')}</div>
+                <div class="small text-body-secondary text-truncate">${esc(p.address || '')}</div>
+              </div>
+              ${App.canManage() ? `<button class="btn btn-sm btn-outline-secondary" data-edit="${esc(p.id)}" aria-label="Editar"><i class="bi bi-pencil"></i></button>` : ''}
+            </div>
+            <div class="row g-2 mt-2 small">
+              <div class="col-6"><div class="stat-strip"><div class="lbl">Unidades</div><div class="val">${p.units}</div></div></div>
+              <div class="col-6"><div class="stat-strip"><div class="lbl">Habitantes</div><div class="val">${p.residents}</div></div></div>
+              <div class="col-6"><div class="stat-strip red"><div class="lbl">Cartera vencida</div><div class="val">${money(p.overdue)}</div></div></div>
+              <div class="col-6"><div class="stat-strip violet"><div class="lbl">PQRS abiertas</div><div class="val">${p.open_pqrs}</div></div></div>
+            </div>
+            ${p.towers ? `<div class="small mt-2"><i class="bi bi-buildings me-1"></i>${esc(p.towers)}</div>` : ''}
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button class="btn btn-sm btn-primary" data-open="${esc(p.id)}"><i class="bi bi-box-arrow-in-right me-1"></i>Trabajar en este conjunto</button>
+              <button class="btn btn-sm btn-outline-secondary" data-docs="${esc(p.id)}"><i class="bi bi-folder2-open me-1"></i>Documentos</button>
+            </div>
+          </div></div></div>`).join('')
+          : '<div class="col-12"><div class="card"><div class="empty">Aún no hay conjuntos. Crea el primero para empezar a registrar unidades.</div></div></div>';
+      }
+
+      function edit(p) {
+        const { el } = App.formDialog({
+          title: p ? 'Editar conjunto' : 'Nuevo conjunto',
+          fields: FIELDS + (p ? `
+            <hr><label class="form-label small">Logotipo (PNG o JPG, recomendado 300×300)</label>
+            <div class="d-flex align-items-center gap-3"><div class="prop-logo" id="logoPrev">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : '<i class="bi bi-building"></i>'}</div>
+              <label class="btn btn-sm btn-outline-secondary mb-0"><i class="bi bi-upload me-1"></i>Subir logo<input type="file" id="logoFile" class="d-none" accept="image/png,image/jpeg,image/webp"></label></div>` : ''),
+          data: p || { status: 'active' },
+          size: 'modal-lg',
+          extraFooter: p ? `<button type="button" class="btn btn-outline-danger me-auto" data-delete><i class="bi bi-trash"></i></button>` : '',
+          onSave: async (d) => {
+            if (p) await App.api(`/properties/${p.id}`, { method: 'PUT', body: d });
+            else {
+              const r = await App.api('/properties', { method: 'POST', body: d });
+              App.setProperty(r.id);
+            }
+            App.toast('Conjunto guardado');
+            await reloadProps(); load();
+          },
+        });
+        el.querySelector('#logoFile')?.addEventListener('change', async (ev) => {
+          const fd = new FormData();
+          fd.append('file', ev.target.files[0]);
+          try {
+            const r = await App.api(`/properties/${p.id}/logo`, { method: 'POST', form: fd });
+            el.querySelector('#logoPrev').innerHTML = `<img src="${esc(r.logo)}" alt="">`;
+            App.toast('Logo actualizado');
+            await reloadProps(); load();
+          } catch (err) { App.fail(err); }
+        });
+        el.querySelector('[data-delete]')?.addEventListener('click', async () => {
+          if (!(await App.confirmAction(`¿Eliminar "${p.name}" con todas sus unidades, cartera, PQRS y reservas? Esta acción no se puede deshacer.`))) return;
+          try {
+            await App.api(`/properties/${p.id}`, { method: 'DELETE' });
+            bootstrap.Modal.getInstance(el).hide();
+            App.toast('Conjunto eliminado');
+            await reloadProps(); load();
+          } catch (err) { App.fail(err); }
+        });
+      }
+
+      function docs(p) {
+        const { el } = App.modal(`
+          <div class="modal-header"><h5 class="modal-title">Documentos · ${esc(p.name)}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+          <div class="modal-body"><p class="small text-body-secondary">Actas de asamblea, reglamento, pólizas, presupuestos (PDF o imágenes, hasta 15 MB).</p><div id="files"></div></div>`);
+        App.attachments(el.querySelector('#files'), 'property', p.id);
+      }
+
+      $('list').addEventListener('click', (ev) => {
+        const find = (id) => App.properties.find((p) => p.id === id);
+        const b = ev.target.closest('button');
+        if (!b) return;
+        if (b.dataset.edit) edit(find(b.dataset.edit));
+        if (b.dataset.docs) docs(find(b.dataset.docs));
+        if (b.dataset.open) { App.setProperty(b.dataset.open); location.href = '/admin/'; }
+      });
+      $('newBtn').addEventListener('click', () => edit(null));
+      if (App.param('new') && App.canManage()) edit(null);
+      load();
+    })();
+  </script>
+</body>
+</html>

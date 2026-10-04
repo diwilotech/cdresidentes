@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comunicados · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="mb-3">
+      <div class="eyebrow">Oficina de copropiedad</div>
+      <h1 class="page-title">Tablero de comunicados y circulares</h1>
+      <p class="page-sub">Publica y distribuye avisos oficiales a propietarios y residentes por WhatsApp y correo.</p>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <div class="card" id="composer">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-pencil-square me-2 text-primary"></i><span id="formTitle">Escribir nueva circular</span></span>
+            <button class="btn btn-sm btn-link d-none" id="cancelEdit">Cancelar edición</button></div>
+          <div class="card-body">
+            <form id="form" novalidate>
+              <div class="mb-2"><label class="form-label small">Título del comunicado *</label><input name="title" class="form-control" required maxlength="160" placeholder="Ej. Programación de fumigación de áreas comunes"></div>
+              <div class="row g-2 mb-2">
+                <div class="col-sm-6"><label class="form-label small">Categoría</label>
+                  <select name="category" class="form-select">
+                    <option value="mantenimiento">🛠️ Mantenimiento</option><option value="seguridad">🔒 Seguridad</option><option value="servicios">💧 Servicios</option>
+                    <option value="asamblea">📅 Asamblea / reuniones</option><option value="convivencia">🤝 Convivencia sana</option><option value="finanzas">💵 Finanzas / recaudos</option><option value="general">📌 General</option>
+                  </select></div>
+                <div class="col-sm-6"><label class="form-label small">Para</label><select name="property_id" class="form-select" id="propSel"></select></div>
+              </div>
+              <div class="d-flex justify-content-between align-items-end mb-1"><label class="form-label small mb-0">Contenido *</label>
+                <button type="button" class="btn btn-sm btn-ai" id="aiBtn"><i class="bi bi-stars me-1"></i>Redactar con IA</button></div>
+              <textarea name="body" class="form-control mb-2" rows="9" required maxlength="8000" placeholder="Redacta el contenido principal que todos los residentes deben conocer de forma clara…"></textarea>
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="finanzas">✍️ Plantilla finanzas</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="seguridad">✍️ Plantilla seguridad</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="asamblea">✍️ Plantilla asamblea</button>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-send me-1"></i>Publicar</button>
+                <button type="button" class="btn btn-outline-secondary" id="draftBtn">Guardar borrador</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="card">
+          <div class="filters">
+            <div class="input-group grow"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="search" id="q" class="form-control" placeholder="Buscar en comunicados…"></div>
+            <select id="status" class="form-select"><option value="">Activos</option><option value="published">Publicados</option><option value="draft">Borradores</option><option value="archived">Archivados</option></select>
+          </div>
+          <div class="list-group list-group-flush" id="list"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('comunicados'))) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const form = $('form');
+      const CAT = { mantenimiento: '🛠️ Mantenimiento', seguridad: '🔒 Seguridad', servicios: '💧 Servicios', asamblea: '📅 Asamblea', convivencia: '🤝 Convivencia', finanzas: '💵 Finanzas', general: '📌 General' };
+      const ST = { draft: ['Borrador', 'secondary'], published: ['Publicado', 'success'], archived: ['Archivado', 'secondary'] };
+      const TPL = {
+        finanzas: ['Recordatorio de pago de cuota de administración', 'Estimados copropietarios:\n\nLes recordamos que la cuota de administración del mes vence el día 10. El pago oportuno nos permite mantener la seguridad, el aseo y el buen estado de nuestras zonas comunes, y evita intereses de mora.\n\nPuede pagar por PSE o consignación en la cuenta del conjunto. Si tiene saldos pendientes, comuníquese con la administración para acordar un plan de pagos.\n\nCordialmente,\nLa Administración'],
+        seguridad: ['Recomendaciones de seguridad', 'Estimados residentes:\n\nPara el bienestar de todos, recordamos:\n- Anunciar siempre a sus visitantes en portería.\n- No permitir el ingreso de personas desconocidas.\n- Reportar de inmediato cualquier situación sospechosa al personal de vigilancia.\n\nLa seguridad es responsabilidad de todos.\n\nLa Administración'],
+        asamblea: ['Convocatoria a asamblea general de copropietarios', 'Estimados copropietarios:\n\nDe acuerdo con la Ley 675 de 2001 y el reglamento de propiedad horizontal, se convoca a la Asamblea General Ordinaria que se realizará el día ____ a las ____ en ____.\n\nOrden del día:\n1. Verificación del quórum.\n2. Lectura y aprobación del orden del día.\n3. Informe de gestión de la administración.\n4. Estados financieros y presupuesto.\n5. Proposiciones y varios.\n\nSi no puede asistir, puede otorgar poder escrito a otra persona.\n\nLa Administración'],
+      };
+      let items = [];
+      let editing = null;
+      let timer;
+      const fillProps = () => { $('propSel').innerHTML = App.propertyOptions(App.currentProperty(), { blank: 'Todos los conjuntos' }); };
+      fillProps();
+
+      async function load() {
+        let d;
+        try { d = await App.api('/notices' + App.qs({ q: $('q').value.trim(), status: $('status').value })); } catch (err) { return App.fail(err); }
+        items = d.items;
+        $('list').innerHTML = items.length ? items.map((n) => `
+          <div class="list-group-item py-3">
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-1"><span class="fw-bold">${esc(n.title)}</span>${App.badge(ST[n.status][0], ST[n.status][1])}</div>
+            <div class="small text-body-secondary mb-2">${esc(CAT[n.category])} · ${esc(n.property_name || 'Todos los conjuntos')} · ${App.fmtDate(n.created_at)}${n.author ? ' · ' + esc(n.author) : ''}
+              ${n.sent_wa || n.sent_email ? ` · <i class="bi bi-whatsapp"></i> ${n.sent_wa} <i class="bi bi-envelope ms-1"></i> ${n.sent_email}` : ''}</div>
+            <div class="small mb-2" style="white-space:pre-wrap;max-height:6.5rem;overflow:hidden">${esc(n.body)}</div>
+            <div class="d-flex flex-wrap gap-2">
+              ${App.canManage() && n.status !== 'archived' ? `<button class="btn btn-sm btn-primary" data-send="${esc(n.id)}"><i class="bi bi-send me-1"></i>Enviar a residentes</button>` : ''}
+              <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(n.id)}"><i class="bi bi-pencil"></i></button>
+              ${n.status !== 'archived' ? `<button class="btn btn-sm btn-outline-secondary" data-archive="${esc(n.id)}" title="Archivar"><i class="bi bi-archive"></i></button>` : `<button class="btn btn-sm btn-outline-secondary" data-restore="${esc(n.id)}" title="Restaurar"><i class="bi bi-arrow-counterclockwise"></i></button>`}
+              <button class="btn btn-sm btn-outline-secondary" data-copy="${esc(n.id)}" title="Copiar texto"><i class="bi bi-copy"></i></button>
+            </div>
+          </div>`).join('') : '<div class="empty">No se encontraron comunicados con los criterios de búsqueda.</div>';
+      }
+
+      function resetForm() {
+        editing = null;
+        form.reset(); fillProps();
+        $('formTitle').textContent = 'Escribir nueva circular';
+        $('cancelEdit').classList.add('d-none');
+      }
+
+      async function save(status) {
+        if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+        const d = { ...App.formData(form), status };
+        try {
+          if (editing) await App.api(`/notices/${editing}`, { method: 'PUT', body: d });
+          else {
+            const r = await App.api('/notices', { method: 'POST', body: d });
+            if (status === 'published' && App.canManage()) sendDialog({ id: r.id, title: d.title, property_id: d.property_id });
+          }
+          App.toast(status === 'draft' ? 'Borrador guardado' : 'Comunicado publicado');
+          form.classList.remove('was-validated');
+          resetForm(); load();
+        } catch (err) { App.fail(err); }
+      }
+
+      async function sendDialog(n) {
+        const counts = async (aud) => App.api(`/notices/${n.id}/recipients?audience=${aud}`);
+        const { el, form: f } = App.formDialog({
+          title: `Enviar · ${n.title}`, submit: 'Enviar ahora',
+          data: { audience: 'all', email: true, whatsapp: true },
+          fields: `
+            <label class="form-label small">Destinatarios</label>
+            <select name="audience" class="form-select mb-3"><option value="all">Propietarios y arrendatarios</option><option value="owners">Solo propietarios</option><option value="debtors">Solo unidades en mora</option></select>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="whatsapp" id="cWa"><label class="form-check-label" for="cWa"><i class="bi bi-whatsapp text-success me-1"></i>WhatsApp</label></div>
+            <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="email" id="cEm"><label class="form-check-label" for="cEm"><i class="bi bi-envelope me-1"></i>Correo (copia oculta)</label></div>
+            <div class="small text-body-secondary" id="rc">Calculando destinatarios…</div>`,
+          onSave: async (d) => {
+            const channels = [d.whatsapp && 'whatsapp', d.email && 'email'].filter(Boolean);
+            const r = await App.api(`/notices/${n.id}/send`, { method: 'POST', body: { channels, audience: d.audience } });
+            App.toast(`Enviado: ${r.sent.whatsapp} WhatsApp · ${r.sent.email} correos`);
+            load();
+          },
+        });
+        const refresh = async () => {
+          try { const c = await counts(f.elements.audience.value); el.querySelector('#rc').textContent = `${c.units} unidades · ${c.phones} celulares · ${c.emails} correos`; }
+          catch (err) { el.querySelector('#rc').textContent = err.message; }
+        };
+        f.elements.audience.addEventListener('change', refresh);
+        refresh();
+      }
+
+      $('list').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        const n = items.find((x) => x.id === (b.dataset.send || b.dataset.edit || b.dataset.archive || b.dataset.restore || b.dataset.copy));
+        try {
+          if (b.dataset.send) sendDialog(n);
+          if (b.dataset.edit) {
+            editing = n.id;
+            App.fillForm(form, { ...n, property_id: n.property_id || '' });
+            $('formTitle').textContent = 'Editar comunicado';
+            $('cancelEdit').classList.remove('d-none');
+            $('composer').scrollIntoView({ behavior: 'smooth' });
+          }
+          if (b.dataset.archive && (await App.confirmAction('¿Estás seguro de que deseas archivar este comunicado?'))) { await App.api(`/notices/${n.id}`, { method: 'PUT', body: { status: 'archived' } }); load(); }
+          if (b.dataset.restore) { await App.api(`/notices/${n.id}`, { method: 'PUT', body: { status: 'published' } }); load(); }
+          if (b.dataset.copy) { await navigator.clipboard.writeText(`${n.title}\n\n${n.body}`); App.toast('Texto copiado'); }
+        } catch (err) { App.fail(err); }
+      });
+
+      document.querySelectorAll('[data-tpl]').forEach((b) => b.addEventListener('click', () => {
+        const [t, body] = TPL[b.dataset.tpl];
+        form.elements.title.value = t; form.elements.body.value = body; form.elements.category.value = b.dataset.tpl;
+      }));
+      $('aiBtn').addEventListener('click', async () => {
+        const topic = form.elements.title.value.trim() || form.elements.body.value.trim();
+        if (!topic) return App.toast('Escribe el título o una idea del comunicado', 'warning');
+        const b = $('aiBtn');
+        b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Redactando…';
+        try {
+          const r = await App.api('/ai/draft', { method: 'POST', body: { kind: 'circular', topic: `${topic} (categoría ${form.elements.category.value})`, property_id: form.elements.property_id.value || undefined } });
+          const [first, ...rest] = r.text.split('\n');
+          if (!form.elements.title.value.trim()) form.elements.title.value = first.replace(/^[#*\s]+|[*]+$/g, '').slice(0, 160);
+          form.elements.body.value = (form.elements.title.value.trim() && rest.length ? rest.join('\n') : r.text).trim();
+        } catch (err) { App.fail(err); }
+        b.disabled = false; b.innerHTML = '<i class="bi bi-stars me-1"></i>Redactar con IA';
+      });
+      form.addEventListener('submit', (ev) => { ev.preventDefault(); save('published'); });
+      $('draftBtn').addEventListener('click', () => save('draft'));
+      $('cancelEdit').addEventListener('click', resetForm);
+      $('status').addEventListener('change', load);
+      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      App.onProperty(() => { if (!editing) fillProps(); load(); });
+
+      // Borrador que llega desde el chat de Diwilo AI.
+      try {
+        const draft = sessionStorage.getItem('cdr_draft');
+        if (draft) {
+          sessionStorage.removeItem('cdr_draft');
+          const [first, ...rest] = draft.trim().split('\n');
+          form.elements.title.value = first.replace(/^[#*\s]+|[*:]+$/g, '').slice(0, 160);
+          form.elements.body.value = rest.join('\n').trim() || draft;
+        }
+      } catch { /* sin almacenamiento */ }
+      if (App.param('new')) form.elements.title.focus();
+      load();
+    })();
+  </script>
+</body>
+</html>

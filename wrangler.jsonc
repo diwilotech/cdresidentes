@@ -1,0 +1,60 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cdresidentes",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Solo se publica en el dominio propio (cdresidentes.diwilo.com).
+  // Diwilo Web llega por service binding, sin pasar por el dominio.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "cdresidentes.diwilo.com", "custom_domain": true }],
+
+  // Conserva las variables cargadas en el dashboard en cada deploy.
+  "keep_vars": true,
+
+  // En Workers Builds (WORKERS_CI=1) aplica las migraciones de D1 pendientes antes de desplegar.
+  // En local no hace nada. Si una migración falla, el despliegue se detiene.
+  "build": {
+    "command": "sh -c 'if [ -n \"$WORKERS_CI\" ]; then npx wrangler d1 migrations apply cdresidentes --remote; fi'"
+  },
+
+  // Frontend: HTML sueltas servidas por el mismo Worker.
+  // /api/* y /admin/* pasan primero por el Worker (sesión + tenant).
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/admin", "/admin/*"]
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cdresidentes",
+      "database_id": "b346d14d-7ead-40d4-b52d-9cd3ab8230a7",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Fotos y documentos (actas, soportes de pago, evidencias de PQRS, mascotas) y logos.
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "cdresidentes-files" }
+  ],
+
+  // Diwilo Residential AI (chat del asistente) con Workers AI.
+  "ai": { "binding": "AI" },
+
+  "vars": {
+    "APP_NAME": "CD Residentes",
+    "DEFAULT_COUNTRY_CODE": "57",
+    "SMTP_HOST": "smtp.gmail.com",
+    "SMTP_PORT": "465"
+  }
+
+  // Secretos (wrangler secret put <NOMBRE>), no van en el repo:
+  //   PLATFORM_KEY         clave compartida con Diwilo Web (crea negocios y maneja suscripciones)
+  //   SMTP_USER / SMTP_PASS  cuenta Gmail + contraseña de aplicación
+  //   EVOLUTION_URL / EVOLUTION_KEY  servidor Evolution API
+}

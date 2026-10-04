@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Propietarios · CD Residentes</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Directorio activo</div>
+        <h1 class="page-title">Propietarios y unidades <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
+        <p class="page-sub">Copropietarios y arrendatarios con coeficientes, áreas y estado financiero.</p>
+      </div>
+      <button class="btn btn-primary" id="newBtn"><i class="bi bi-person-plus me-1"></i>Añadir propietario</button>
+    </div>
+
+    <div class="card ai-insight mb-3 d-none" id="insight"><div class="card-body d-flex gap-3 align-items-center flex-wrap">
+      <div class="ai-ico"><i class="bi bi-stars"></i></div>
+      <div class="flex-grow-1 small" id="insightText"></div>
+      <a class="btn btn-sm btn-ai" id="insightBtn" href="/admin/asistente"><i class="bi bi-stars me-1"></i>Resolver con IA</a>
+    </div></div>
+
+    <div class="card">
+      <div class="filters">
+        <div class="input-group grow">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="search" id="q" class="form-control" placeholder="Unidad, propietario, documento, placa…">
+        </div>
+        <select id="tower" class="form-select"><option value="">Torre: todas</option></select>
+        <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
+        <select id="debt" class="form-select"><option value="">Estado: todos</option><option value="0">Al día</option><option value="1">En mora</option></select>
+        <button class="btn btn-outline-secondary" id="reset" title="Restaurar filtros"><i class="bi bi-arrow-counterclockwise"></i></button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover table-clickable mb-0">
+          <thead><tr><th>Unidad</th><th>Propietario</th><th class="hide-xs">Arrendatario</th><th class="num hide-xs">Área · Coef.</th><th class="num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.init('unidades'))) return;
+      const { esc, money, unitLabel } = App;
+      const $ = (id) => document.getElementById(id);
+      let items = [];
+      let timer;
+      $('kind').innerHTML += Object.entries(App.KIND).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
+      const FIELDS = () => `
+        <div class="row g-2">
+          <div class="col-sm-6"><label class="form-label small">Conjunto *</label><select name="property_id" class="form-select" required>${App.propertyOptions()}</select></div>
+          <div class="col-sm-3"><label class="form-label small">Torre / bloque</label><input name="tower" class="form-control" maxlength="40" placeholder="Torre A"></div>
+          <div class="col-sm-3"><label class="form-label small">Número *</label><input name="number" class="form-control" required maxlength="20" placeholder="402"></div>
+          <div class="col-sm-4"><label class="form-label small">Tipo</label><select name="kind" class="form-select">${Object.entries(App.KIND).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="col-6 col-sm-4"><label class="form-label small">Área (m²)</label><input name="area_m2" type="number" step="0.01" min="0" class="form-control" placeholder="84.50"></div>
+          <div class="col-6 col-sm-4"><label class="form-label small">Coeficiente (%)</label><input name="coefficient" type="number" step="0.0001" min="0" max="100" class="form-control" placeholder="2.0"></div>
+          <div class="col-12"><div class="eyebrow mt-2">Propietario</div></div>
+          <div class="col-sm-6"><label class="form-label small">Nombre</label><input name="owner_name" class="form-control" maxlength="120" placeholder="Ej. Beatriz Helena Sánchez"></div>
+          <div class="col-sm-6"><label class="form-label small">Documento</label><input name="owner_doc" class="form-control" maxlength="30"></div>
+          <div class="col-sm-6"><label class="form-label small">Celular (WhatsApp)</label><input name="owner_phone" class="form-control" maxlength="30" placeholder="+57 305 000 0000"></div>
+          <div class="col-sm-6"><label class="form-label small">Correo</label><input name="owner_email" type="email" class="form-control"></div>
+          <div class="col-12"><div class="eyebrow mt-2">Arrendatario (opcional)</div></div>
+          <div class="col-sm-4"><label class="form-label small">Nombre</label><input name="tenant_name" class="form-control" maxlength="120"></div>
+          <div class="col-sm-4"><label class="form-label small">Celular</label><input name="tenant_phone" class="form-control" maxlength="30"></div>
+          <div class="col-sm-4"><label class="form-label small">Correo</label><input name="tenant_email" type="email" class="form-control"></div>
+          <div class="col-12"><div class="eyebrow mt-2">Censo</div></div>
+          <div class="col-sm-4"><label class="form-label small">Ocupación</label><select name="occupancy" class="form-select">${Object.entries(App.OCCUPANCY).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="col-sm-4"><label class="form-label small">Habitantes</label><input name="residents" type="number" min="0" max="50" class="form-control"></div>
+          <div class="col-sm-4"><label class="form-label small">Vehículos (placas)</label><input name="vehicles" class="form-control" maxlength="120"></div>
+          <div class="col-12"><label class="form-label small">Observaciones</label><textarea name="notes" class="form-control" rows="2" maxlength="2000"></textarea></div>
+        </div>`;
+
+      async function load() {
+        const params = { q: $('q').value.trim(), tower: $('tower').value, kind: $('kind').value, debt: $('debt').value };
+        let d;
+        try { d = await App.api('/units' + App.qs(params)); } catch (err) { return App.fail(err); }
+        items = d.items;
+        const tv = $('tower').value;
+        $('tower').innerHTML = '<option value="">Torre: todas</option>' + d.towers.map((t) => `<option ${t === tv ? 'selected' : ''}>${esc(t)}</option>`).join('');
+        $('count').textContent = `(${items.length})`;
+        $('rows').innerHTML = items.length ? items.map((u) => `
+          <tr data-id="${esc(u.id)}">
+            <td><div class="fw-semibold">${esc(unitLabel(u))}</div><div class="small text-body-secondary">${esc(App.KIND[u.kind] || u.kind)}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</div></td>
+            <td><div class="fw-medium">${esc(u.owner_name || '—')}</div><div class="small text-body-secondary">${esc(u.owner_phone || '')}</div></td>
+            <td class="hide-xs">${u.tenant_name ? `<div>${esc(u.tenant_name)}</div><div class="small text-body-secondary">${esc(u.tenant_phone || '')}</div>` : `<span class="text-body-secondary small">${u.occupancy === 'vacant' ? 'Desocupada' : 'No aplica'}</span>`}</td>
+            <td class="num hide-xs small">${u.area_m2 ? App.fmtNum(u.area_m2, 2) + ' m²' : '—'}<br><span class="text-body-secondary">${u.coefficient != null ? App.fmtNum(u.coefficient, 4) + '%' : ''}</span></td>
+            <td class="num">${u.overdue > 0 ? `<span class="fw-bold text-danger">${money(u.overdue)}</span><div>${App.badge('En mora', 'danger')}</div>` : `<span class="mono">${money(u.balance)}</span><div>${App.badge('Al día', 'success')}</div>`}</td>
+            <td class="text-end text-nowrap">
+              ${u.owner_phone ? `<button class="btn btn-sm btn-outline-success" data-wa="${esc(u.id)}" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>` : ''}
+              ${u.overdue > 0 ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(u.id)}" title="Cobrar con AI"><i class="bi bi-stars"></i><span class="d-none d-xl-inline ms-1">Cobrar</span></button>` : ''}
+              <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(u.id)}" title="Editar"><i class="bi bi-pencil"></i></button>
+            </td>
+          </tr>`).join('')
+          : `<tr><td colspan="6" class="empty">${App.properties.length ? 'Sin unidades con estos filtros.' : 'Primero crea un conjunto en la sección Conjuntos.'}</td></tr>`;
+
+        const debtors = items.filter((u) => u.overdue > 0);
+        if (debtors.length) {
+          const byTower = {};
+          debtors.forEach((u) => (byTower[u.tower || 'Sin torre'] = (byTower[u.tower || 'Sin torre'] || 0) + 1));
+          const [worst, n] = Object.entries(byTower).sort((a, b) => b[1] - a[1])[0];
+          $('insightText').innerHTML = `<span class="eyebrow text-ai">AI morosidad insight</span><br><strong>${debtors.length}</strong> unidades en mora en esta vista; <strong>${esc(worst)}</strong> concentra ${n}. Total vencido ${money(debtors.reduce((s, u) => s + u.overdue, 0))}.`;
+          $('insightBtn').href = `/admin/asistente?q=${encodeURIComponent(`Redacta una circular cordial de cobro para ${worst} y prioriza las unidades con más días de atraso`)}`;
+          $('insight').classList.remove('d-none');
+        } else $('insight').classList.add('d-none');
+      }
+
+      function edit(u) {
+        App.formDialog({
+          title: u ? 'Editar datos del propietario' : 'Añadir nuevo propietario',
+          fields: FIELDS(), size: 'modal-lg',
+          data: u || { property_id: App.currentProperty() || App.properties[0]?.id, kind: 'apartamento', occupancy: 'owner' },
+          extraFooter: u && App.canManage() ? `<button type="button" class="btn btn-outline-danger me-auto" id="delUnit"><i class="bi bi-trash"></i></button>` : '',
+          onSave: async (d) => {
+            if (u) await App.api(`/units/${u.id}`, { method: 'PUT', body: d });
+            else await App.api('/units', { method: 'POST', body: d });
+            App.toast(u ? 'Cambios guardados' : 'Propietario guardado');
+            load();
+          },
+        }).el.querySelector('#delUnit')?.addEventListener('click', async (ev) => {
+          if (!(await App.confirmAction(`¿Eliminar la unidad ${unitLabel(u)} con su cartera y mascotas?`))) return;
+          try {
+            await App.api(`/units/${u.id}`, { method: 'DELETE' });
+            bootstrap.Modal.getInstance(ev.target.closest('.modal')).hide();
+            App.toast('Unidad eliminada'); load();
+          } catch (err) { App.fail(err); }
+        });
+      }
+
+      // Ficha: desglose de cobros por concepto, movimientos, mascotas y documentos.
+      async function detail(id) {
+        let d;
+        try { d = await App.api(`/units/${id}`); } catch (err) { return App.fail(err); }
+        const u = d.unit;
+        const pending = d.charges.filter((c) => !c.paid_at);
+        const { el, hide } = App.modal(`
+          <div class="modal-header"><div><h5 class="modal-title mb-0">${esc(unitLabel(u))} · ${esc(u.property_name)}</h5>
+            <div class="small text-body-secondary">${esc(u.owner_name || 'Sin propietario')}${u.owner_doc ? ' · ' + esc(u.owner_doc) : ''}</div></div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+          <div class="modal-body">
+            <div class="eyebrow mb-2">Desglose de cobros pendientes</div>
+            <table class="table table-sm mb-3"><tbody>
+              ${d.breakdown.filter((b) => b.amount).map((b) => `<tr><td>${esc(App.CONCEPTS[b.concept])}</td><td class="num">${money(b.amount)}</td></tr>`).join('') || '<tr><td class="text-body-secondary">Sin saldos pendientes</td></tr>'}
+              <tr class="fw-bold"><td>Total pendiente <span class="text-body-secondary fw-normal small">(vencido ${money(u.overdue)})</span></td><td class="num ${u.overdue ? 'text-danger' : ''}">${money(u.balance)}</td></tr>
+            </tbody></table>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              ${pending.length ? `<button class="btn btn-sm btn-primary" data-payall><i class="bi bi-check2-all me-1"></i>Registrar pago total</button>` : ''}
+              <button class="btn btn-sm btn-ai" data-msg><i class="bi bi-stars me-1"></i>${u.overdue ? 'Cobrar con IA' : 'Enviar mensaje'}</button>
+              <a class="btn btn-sm btn-outline-secondary" href="/admin/cartera?unit=${esc(u.id)}"><i class="bi bi-receipt me-1"></i>Ver en cartera</a>
+            </div>
+            <div class="eyebrow mb-2">Movimientos</div>
+            <div class="table-responsive mb-3" style="max-height:16rem"><table class="table table-sm small mb-0"><thead><tr><th>Concepto</th><th>Vence</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>
+              ${d.charges.map((c) => `<tr><td>${esc(App.CONCEPTS[c.concept])}${c.period ? ' ' + esc(c.period) : ''}</td><td>${App.fmtDate(c.due_date)}</td><td class="num">${money(c.amount)}</td>
+                <td>${c.paid_at ? App.badge('Pagado ' + App.fmtDate(c.paid_at), 'success') : c.due_date < App.todayLocal() ? App.badge('Vencido', 'danger') : App.badge('Pendiente', 'warning')}</td></tr>`).join('') || '<tr><td colspan="4" class="text-body-secondary">Sin movimientos</td></tr>'}
+            </tbody></table></div>
+            <div class="row g-3 small">
+              <div class="col-md-6"><div class="eyebrow mb-1">Contacto</div>
+                <div><i class="bi bi-telephone me-1"></i>${esc(u.owner_phone || '—')}</div><div><i class="bi bi-envelope me-1"></i>${esc(u.owner_email || '—')}</div>
+                ${u.tenant_name ? `<div class="mt-1"><strong>Arrendatario:</strong> ${esc(u.tenant_name)} ${esc(u.tenant_phone || '')}</div>` : ''}
+                ${u.vehicles ? `<div class="mt-1"><i class="bi bi-car-front me-1"></i>${esc(u.vehicles)}</div>` : ''}</div>
+              <div class="col-md-6"><div class="eyebrow mb-1">Mascotas</div>${d.pets.map((p) => `<div><i class="bi bi-heart me-1"></i>${esc(p.name)} · ${esc(p.species)}${p.breed ? ' ' + esc(p.breed) : ''}</div>`).join('') || '<span class="text-body-secondary">Ninguna registrada</span>'}</div>
+            </div>
+            <div class="eyebrow mt-3 mb-1">Documentos</div><div id="files"></div>
+          </div>`, { size: 'modal-lg' });
+        App.attachments(el.querySelector('#files'), 'unit', u.id);
+        el.querySelector('[data-msg]').addEventListener('click', () => { hide(); App.messageDialog(u, { aiCobro: u.overdue > 0 }); });
+        el.querySelector('[data-payall]')?.addEventListener('click', () => {
+          hide();
+          App.formDialog({
+            title: `Pago total · ${unitLabel(u)}`, submit: 'Registrar pago',
+            data: { paid_at: App.todayLocal() },
+            fields: `<p class="small">Marca como pagados ${pending.length} cobros por <strong>${money(u.balance)}</strong>.</p>
+              <div class="row g-2"><div class="col-sm-6"><label class="form-label small">Fecha de pago</label><input name="paid_at" type="date" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Referencia</label><input name="payment_ref" class="form-control" maxlength="120" placeholder="PSE, consignación…"></div></div>`,
+            onSave: async (b) => { await App.api(`/units/${u.id}/pay-all`, { method: 'POST', body: b }); App.toast('Pago registrado'); load(); },
+          });
+        });
+      }
+
+      $('rows').addEventListener('click', (ev) => {
+        const find = (id) => items.find((u) => u.id === id);
+        const b = ev.target.closest('button');
+        if (b?.dataset.edit) return edit(find(b.dataset.edit));
+        if (b?.dataset.cobrar) return App.messageDialog(find(b.dataset.cobrar), { aiCobro: true });
+        if (b?.dataset.wa) {
+          const u = find(b.dataset.wa);
+          return App.messageDialog(u, { text: `Hola ${u.owner_name || ''}, te saludamos de la administración de ${u.property_name}. ` });
+        }
+        const tr = ev.target.closest('tr[data-id]');
+        if (tr) detail(tr.dataset.id);
+      });
+      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      ['tower', 'kind', 'debt'].forEach((id) => $(id).addEventListener('change', load));
+      $('reset').addEventListener('click', () => { $('q').value = ''; $('tower').value = ''; $('kind').value = ''; $('debt').value = ''; load(); });
+      $('newBtn').addEventListener('click', () => {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        edit(null);
+      });
+      if (App.param('debt')) $('debt').value = App.param('debt');
+      App.onProperty(load);
+      load();
+    })();
+  </script>
+</body>
+</html>
