@@ -11,23 +11,36 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="/admin/assets/app.css" rel="stylesheet">
   <style>
-    .bars { display: flex; align-items: flex-end; gap: 6px; height: 170px; }
+    .bars { display: flex; align-items: flex-end; gap: 6px; height: 150px; }
     .bars .b { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
     .bars .b i { display: block; width: 100%; max-width: 34px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, #10B981, #047857); min-height: 2px; }
     .bars .b span { font: 600 10px/1.2 var(--cdr-mono); color: var(--cdr-muted); margin-top: 4px; }
+    .k-rtc { color: #64748B; } .k-ext { color: #4F46E5; } .k-jur { color: #DC2626; } .k-int { color: #D97706; } .k-par { color: #0E7490; } .k-otr { color: #6B7280; }
+    [data-bs-theme="dark"] .k-rtc { color: #94A3B8; } [data-bs-theme="dark"] .k-ext { color: #A5B4FC; } [data-bs-theme="dark"] .k-par { color: #67E8F9; }
   </style>
 </head>
 <body>
-  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1500px">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
       <div>
         <div class="eyebrow">Auditoría de cartera</div>
         <h1 class="page-title">Cartera e intereses de mora</h1>
-        <p class="page-sub">Saldos por cobrar, cuotas de administración, extraordinarias, parqueaderos, retroactivos y cobro jurídico.</p>
+        <p class="page-sub">Cuota de administración, retroactivos, extraordinarias, parqueaderos, cobro jurídico e intereses por unidad.</p>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <button class="btn btn-outline-secondary manager" id="interestBtn"><i class="bi bi-percent me-1"></i>Liquidar intereses</button>
-        <button class="btn btn-outline-primary manager" id="genBtn"><i class="bi bi-calendar-plus me-1"></i>Generar cuotas del mes</button>
+        <button class="btn btn-outline-primary" id="pdfBatch"><i class="bi bi-file-earmark-pdf me-1"></i>Cuentas de cobro</button>
+        <div class="dropdown manager">
+          <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-calculator me-1"></i>Liquidar</button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><button class="dropdown-item" data-liq="admin"><i class="bi bi-calendar-plus me-2"></i>Cuotas de administración del mes</button></li>
+            <li><button class="dropdown-item" data-liq="int"><i class="bi bi-percent me-2"></i>Intereses de mora (INT)</button></li>
+            <li><button class="dropdown-item" data-liq="jur"><i class="bi bi-bank me-2"></i>Cobro jurídico (JUR)</button></li>
+            <li><button class="dropdown-item" data-liq="rtc"><i class="bi bi-arrow-repeat me-2"></i>Retroactivo (RTC)</button></li>
+            <li><button class="dropdown-item" data-liq="ext"><i class="bi bi-hammer me-2"></i>Cuota extraordinaria (EXT)</button></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item small" href="/admin/ajustes#cartera"><i class="bi bi-gear me-2"></i>Tasas y formato del PDF</a></li>
+          </ul>
+        </div>
         <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Nuevo cobro</button>
       </div>
     </div>
@@ -45,7 +58,19 @@
       </div></div>
     </div>
 
-    <div class="card">
+    <ul class="nav nav-pills mb-2 gap-1" id="tabs">
+      <li class="nav-item"><button class="nav-link active" data-tab="units"><i class="bi bi-person-lines-fill me-1"></i>Estado de cuenta por unidad</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="moves"><i class="bi bi-list-ul me-1"></i>Movimientos</button></li>
+    </ul>
+
+    <div class="card" id="tab-units">
+      <div class="filters">
+        <select id="scope" class="form-select"><option value="">Unidades con saldo</option><option value="1">Todas las unidades</option></select>
+      </div>
+      <table class="table table-hover align-middle w-100" id="unitsTable"></table>
+    </div>
+
+    <div class="card d-none" id="tab-moves">
       <div class="filters">
         <select id="status" class="form-select">
           <option value="pending">Pendientes</option><option value="overdue">Vencidos</option><option value="paid">Pagados</option><option value="">Todos</option>
@@ -53,17 +78,13 @@
         <select id="concept" class="form-select"><option value="">Concepto: todos</option></select>
         <span id="unitChip" class="d-none align-self-center"></span>
       </div>
-      <div class="table-responsive">
-        <table class="table table-hover mb-0">
-          <thead><tr><th>Unidad</th><th>Concepto</th><th class="hide-xs">Vence</th><th class="num">Valor</th><th>Estado</th><th class="text-end"></th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
+      <table class="table table-hover align-middle w-100" id="movesTable"></table>
     </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="/admin/assets/app.js"></script>
+  <script src="/admin/assets/cuenta-cobro.js"></script>
   <script>
     (async () => {
       if (!(await App.init('cartera'))) return;
@@ -71,14 +92,15 @@
       const $ = (id) => document.getElementById(id);
       if (!App.canManage()) document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
       $('concept').innerHTML += Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
-      let unit = App.param('unit') || '';
-      let items = [];
       const today = App.todayLocal();
+      let unit = App.param('unit') || '';
+      let tab = unit ? 'moves' : 'units';
+      let units = [];
+      let moves = [];
+      let billing = null;
+      const getBilling = async () => (billing ||= (await App.api('/billing')).billing);
 
-      async function units(propertyId) {
-        return (await App.api('/units' + App.qs({ property: propertyId }, { withProperty: false }))).items;
-      }
-
+      // ---------- resumen ----------
       async function loadSummary() {
         const s = await App.api('/charges/summary' + App.qs());
         const moraPct = s.units ? Math.round((s.debtors / s.units) * 100) : 0;
@@ -86,145 +108,269 @@
         const k = (label, value, cls = '', sub = '') => `<div class="col-6 col-lg-3"><div class="stat-strip ${cls} h-100"><div class="lbl">${label}</div><div class="val fs-5">${value}</div>${sub ? `<div class="small text-body-secondary">${sub}</div>` : ''}</div></div>`;
         $('kpis').innerHTML = k('Cartera total pendiente', moneyShort(s.pending)) + k('Vencida', moneyShort(s.overdue), 'red', `${s.debtors} unidades · ${moraPct}%`) +
           k('Recaudado este mes', moneyShort(s.collected_month)) + k('Eficiencia de recaudo', `${eff}%`, 'violet', `facturado ${moneyShort(s.billed_month)}`);
-
         const months = [];
         for (let i = 11; i >= 0; i--) { const d = new Date(today.slice(0, 7) + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - i); months.push(d.toISOString().slice(0, 7)); }
         const by = Object.fromEntries(s.monthly.map((m) => [m.month, m.collected]));
         const max = Math.max(1, ...months.map((m) => by[m] || 0));
         $('bars').innerHTML = months.map((m) => `<div class="b" title="${App.fmtMonth(m)}: ${money(by[m] || 0)}"><i style="height:${Math.round(((by[m] || 0) / max) * 100)}%"></i><span>${App.MESES_LARGOS[+m.slice(5) - 1].slice(0, 3)}</span></div>`).join('');
-
-        const order = ['0-30', '31-60', '61-90', '90+'];
         const ag = Object.fromEntries(s.aging.map((a) => [a.bucket, a]));
         const tot = s.aging.reduce((x, a) => x + a.amount, 0) || 1;
-        const cls = { '0-30': 'bg-warning', '31-60': 'bg-orange', '61-90': 'bg-danger', '90+': 'bg-dark' };
-        $('aging').innerHTML = order.map((b) => {
+        const color = { '0-30': '#D97706', '31-60': '#EA580C', '61-90': '#DC2626', '90+': '#7F1D1D' };
+        $('aging').innerHTML = ['0-30', '31-60', '61-90', '90+'].map((b) => {
           const a = ag[b] || { amount: 0, units: 0 };
           return `<div class="mb-3"><div class="d-flex justify-content-between small"><span>${b} días <span class="text-body-secondary">· ${a.units} unid.</span></span><span class="mono fw-semibold">${money(a.amount)}</span></div>
-            <div class="progress" style="height:8px"><div class="progress-bar ${cls[b]}" style="width:${Math.round((a.amount / tot) * 100)}%;${b === '31-60' ? 'background:#EA580C' : ''}"></div></div></div>`;
-        }).join('') + `<div class="small text-body-secondary">Por concepto: ${s.byConcept.map((c) => `${esc(App.CONCEPTS[c.concept])} ${money(c.amount)}`).join(' · ') || '—'}</div>`;
+            <div class="progress" style="height:8px"><div class="progress-bar" style="width:${Math.round((a.amount / tot) * 100)}%;background:${color[b]}"></div></div></div>`;
+        }).join('');
       }
 
-      async function load() {
-        loadSummary().catch(App.fail);
-        let d;
-        try { d = await App.api('/charges' + App.qs({ status: $('status').value, concept: $('concept').value, unit })); } catch (err) { return App.fail(err); }
-        items = d.items;
-        $('unitChip').classList.toggle('d-none', !unit);
-        if (unit && items[0]) $('unitChip').innerHTML = `<span class="badge text-bg-light border">Unidad ${esc(unitLabel(items[0]))} <button class="btn btn-link btn-sm p-0 ms-1" id="clearUnit"><i class="bi bi-x"></i></button></span>`;
-        $('rows').innerHTML = items.length ? items.map((c) => `
-          <tr>
-            <td><div class="fw-semibold">${esc(unitLabel(c))}</div><div class="small text-body-secondary text-truncate" style="max-width:14rem">${esc(c.owner_name || '')}${App.currentProperty() ? '' : ' · ' + esc(c.property_name)}</div></td>
-            <td><div>${esc(App.CONCEPTS[c.concept])}${c.period ? ` <span class="text-body-secondary">${esc(c.period)}</span>` : ''}</div>${c.description && c.concept !== 'admin' ? `<div class="small text-body-secondary">${esc(c.description)}</div>` : ''}</td>
-            <td class="hide-xs">${App.fmtDate(c.due_date)}</td>
-            <td class="num fw-semibold">${money(c.amount)}</td>
-            <td>${c.paid_at ? App.badge('Pagado ' + App.fmtDate(c.paid_at), 'success') : c.due_date < today ? App.badge(`Vencido ${App.daysSince(c.due_date)} d`, 'danger') : App.badge('Por vencer', 'warning')}</td>
-            <td class="text-end text-nowrap">
-              ${c.paid_at
-                ? (App.canManage() ? `<button class="btn btn-sm btn-outline-secondary" data-unpay="${esc(c.id)}" title="Anular pago"><i class="bi bi-arrow-counterclockwise"></i></button>` : '')
-                : `<button class="btn btn-sm btn-outline-success" data-pay="${esc(c.id)}" title="Registrar pago"><i class="bi bi-check2"></i><span class="d-none d-md-inline ms-1">Pago</span></button>`}
-              ${App.canManage() ? `<button class="btn btn-sm btn-outline-danger" data-del="${esc(c.id)}" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
-            </td>
-          </tr>`).join('') : '<tr><td colspan="6" class="empty">Sin cobros con estos filtros.</td></tr>';
+      // ---------- estado de cuenta por unidad (como la cuenta de cobro, con totales) ----------
+      const C = (r, k) => r.concepts[k] || 0;
+      const line = (cls, k, v) => `<div><span class="k ${cls}">${k}:</span><span class="${v ? '' : 'zero'}">${money(v)}</span></div>`;
+      const PAIRS = [[2, ['k-rtc', 'RTC', 'rtc'], ['k-ext', 'EXT', 'ext']], [3, ['k-jur', 'JUR', 'jur'], ['k-int', 'INT', 'int']], [4, ['k-par', 'PAR', 'parking'], ['k-otr', 'OTR', 'other']]];
+      const pairCol = (title, [, a, b], priority) => ({
+        title, className: 'stack-cell', priority, noExport: true, value: (r) => C(r, a[2]) + C(r, b[2]),
+        html: (r) => line(a[0], a[1], C(r, a[2])) + line(b[0], b[1], C(r, b[2])),
+      });
+      const UNIT_COLS = [
+        { title: 'Unidad', html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:11rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>`,
+          value: (r) => `${r.property_name} · ${unitLabel(r)} · ${r.owner_name || ''}` },
+        { title: 'Cuota administración', sum: true, priority: 4, value: (r) => C(r, 'admin'),
+          html: (r) => `<div class="mono fw-semibold">${money(C(r, 'admin'))}</div><button class="btn btn-sm btn-outline-success py-0 px-2 mt-1 text-nowrap" data-items="${esc(r.unit_id)}"><i class="bi bi-receipt me-1"></i>Items cobro</button>` },
+        pairCol('Retroactivos (RTC) / Extra (EXT)', PAIRS[0], 5),
+        pairCol('Jurídico (JUR) / Interés (INT)', PAIRS[1], 6),
+        pairCol('Parqueadero / Otros', PAIRS[2], 7),
+        // Solo en la descarga: un concepto por columna.
+        ...['rtc', 'ext', 'jur', 'int', 'parking', 'other'].map((k) => ({ title: App.CONCEPTS[k], exportOnly: true, sum: true, value: (r) => C(r, k) })),
+        { title: 'Total adeudado', sum: true, priority: 2, value: (r) => r.total,
+          html: (r) => `<span class="total-pill ${!r.total ? 'ok' : r.overdue ? 'bad' : ''}">${money(r.total)}</span>${r.oldest_due ? `<div class="small text-danger mt-1 text-nowrap">${App.daysSince(r.oldest_due)} días de mora</div>` : ''}` },
+        { title: 'Vencido', exportOnly: true, sum: true, value: (r) => r.overdue },
+        { title: 'Acción', noExport: true, orderable: false, className: 'text-end text-nowrap', priority: 3,
+          html: (r) => `<button class="btn btn-sm btn-outline-secondary" data-pdf="${esc(r.unit_id)}" title="Cuenta de cobro PDF"><i class="bi bi-file-earmark-pdf"></i></button>
+            ${r.total ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(r.unit_id)}" title="Cobro con IA"><i class="bi bi-stars"></i><span class="d-none d-xxl-inline"> Cobro AI</span></button>
+            <button class="btn btn-sm btn-outline-success" data-payall="${esc(r.unit_id)}" title="Registrar pago"><i class="bi bi-cash"></i></button>` : ''}` },
+      ];
+      // Pie de las columnas dobles: RTC / EXT, JUR / INT, PAR / OTR.
+      function pairFooter(api) {
+        const rows = api.rows({ search: 'applied' }).data().toArray();
+        const s = (k) => rows.reduce((t, r) => t + C(r, k), 0);
+        for (const [i, a, b] of PAIRS) {
+          const f = api.column(i).footer();
+          if (f) f.innerHTML = `<div class="stack-cell">${line(a[0], a[1], s(a[2]))}${line(b[0], b[1], s(b[2]))}</div>`;
+        }
       }
 
-      async function newCharge() {
+      async function loadUnits() {
+        try {
+          const d = await App.api('/charges/by-unit' + App.qs({ all: $('scope').value }));
+          units = d.items.map((r) => ({ ...r, id: r.unit_id }));
+          await App.dataTable($('unitsTable'), { columns: UNIT_COLS, data: units, order: [[11, 'desc']], title: 'Estado de cuenta por unidad', onDraw: pairFooter });
+        } catch (err) { App.fail(err); }
+      }
+
+      // ---------- movimientos ----------
+      const statusBadge = (c) => (c.paid_at ? App.badge('Pagado ' + App.fmtDate(c.paid_at), 'success') : c.due_date < today ? App.badge(`Vencido ${App.daysSince(c.due_date)} d`, 'danger') : App.badge('Por vencer', 'warning'));
+      const MOVE_COLS = [
+        { title: 'Unidad', html: (c) => `<div class="fw-semibold">${esc(unitLabel(c))}</div><div class="small text-body-secondary text-truncate" style="max-width:14rem">${esc(c.owner_name || '')}${App.currentProperty() ? '' : ' · ' + esc(c.property_name)}</div>`,
+          value: (c) => `${c.property_name} · ${unitLabel(c)} · ${c.owner_name || ''}` },
+        { title: 'Concepto', html: (c) => `<div>${esc(App.CONCEPTS[c.concept])}${c.period ? ` <span class="text-body-secondary">${esc(c.period)}</span>` : ''}</div>${c.description && c.concept !== 'admin' ? `<div class="small text-body-secondary">${esc(c.description)}</div>` : ''}`,
+          value: (c) => `${App.CONCEPTS[c.concept]} ${c.period || ''} ${c.concept !== 'admin' ? c.description || '' : ''}`.trim() },
+        { title: 'Vence', value: (c) => c.due_date, html: (c) => App.fmtDate(c.due_date) },
+        { title: 'Valor', sum: true, value: (c) => c.amount, html: (c) => `<span class="fw-semibold">${money(c.amount)}</span>` },
+        { title: 'Estado', value: (c) => (c.paid_at ? `Pagado ${c.paid_at}` : c.due_date < today ? 'Vencido' : 'Por vencer'), html: statusBadge },
+        { title: 'Referencia de pago', exportOnly: true, value: (c) => c.payment_ref || '' },
+        { title: '', noExport: true, orderable: false, className: 'text-end text-nowrap',
+          html: (c) => (c.paid_at
+            ? (App.canManage() ? `<button class="btn btn-sm btn-outline-secondary" data-unpay="${esc(c.id)}" title="Anular pago"><i class="bi bi-arrow-counterclockwise"></i></button>` : '')
+            : `<button class="btn btn-sm btn-outline-success" data-pay="${esc(c.id)}" title="Registrar pago"><i class="bi bi-check2"></i></button>`) +
+            (App.canManage() ? ` <button class="btn btn-sm btn-outline-danger" data-del="${esc(c.id)}" title="Eliminar"><i class="bi bi-trash"></i></button>` : '') },
+      ];
+
+      async function loadMoves() {
+        try {
+          const d = await App.api('/charges' + App.qs({ status: $('status').value, concept: $('concept').value, unit }));
+          moves = d.items;
+          $('unitChip').classList.toggle('d-none', !unit);
+          if (unit && moves[0]) $('unitChip').innerHTML = `<span class="badge text-bg-light border">Unidad ${esc(unitLabel(moves[0]))} <button class="btn btn-link btn-sm p-0 ms-1" id="clearUnit"><i class="bi bi-x"></i></button></span>`;
+          await App.dataTable($('movesTable'), { columns: MOVE_COLS, data: moves, order: [[2, 'desc']], title: 'Movimientos de cartera' });
+        } catch (err) { App.fail(err); }
+      }
+
+      const reload = () => { loadSummary().catch(App.fail); return tab === 'units' ? loadUnits() : loadMoves(); };
+      async function showTab(t) {
+        tab = t;
+        $('tabs').querySelectorAll('.nav-link').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
+        $('tab-units').classList.toggle('d-none', t !== 'units');
+        $('tab-moves').classList.toggle('d-none', t !== 'moves');
+        await (t === 'units' ? loadUnits : loadMoves)();
+        (t === 'units' ? $('unitsTable') : $('movesTable'))._dt?.columns.adjust().responsive.recalc();
+      }
+
+      // ---------- diálogos ----------
+      const payFields = `<div class="row g-2"><div class="col-sm-6"><label class="form-label small">Fecha de pago</label><input name="paid_at" type="date" class="form-control" required></div>
+        <div class="col-sm-6"><label class="form-label small">Referencia</label><input name="payment_ref" class="form-control" maxlength="120" placeholder="PSE, consignación…"></div></div>`;
+
+      async function itemsDialog(unitId) {
+        const r = units.find((x) => x.unit_id === unitId);
+        const { items } = await App.api('/charges' + App.qs({ unit: unitId, status: 'pending' }, { withProperty: false }));
+        const { el, hide } = App.modal(`
+          <div class="modal-header"><div><h5 class="modal-title mb-0">Items de cobro · ${esc(unitLabel(r))}</h5><div class="small text-body-secondary">${esc(r.owner_name || '')} · ${esc(r.property_name)}</div></div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+          <div class="modal-body p-0"><div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+            <thead><tr><th class="ps-3">Concepto</th><th>Periodo</th><th>Vence</th><th class="num">Valor</th><th></th></tr></thead>
+            <tbody>${items.map((c) => `<tr><td class="ps-3">${esc(App.CONCEPTS[c.concept])}<div class="small text-body-secondary">${esc(c.concept !== 'admin' ? c.description || '' : '')}</div></td>
+              <td>${esc(c.period || '')}</td><td class="text-nowrap">${App.fmtDate(c.due_date)} ${c.due_date < today ? App.badge('Vencido', 'danger') : ''}</td><td class="num fw-semibold">${money(c.amount)}</td>
+              <td class="text-end pe-3"><button class="btn btn-sm btn-outline-success" data-pay-item="${esc(c.id)}" title="Registrar pago"><i class="bi bi-check2"></i></button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">Sin cobros pendientes</td></tr>'}</tbody>
+            <tfoot><tr class="fw-bold"><td class="ps-3" colspan="3">Total adeudado</td><td class="num">${money(items.reduce((s, c) => s + c.amount, 0))}</td><td></td></tr></tfoot>
+          </table></div></div>
+          <div class="modal-footer"><button class="btn btn-outline-secondary" data-pdf-modal="${esc(unitId)}"><i class="bi bi-file-earmark-pdf me-1"></i>Cuenta de cobro PDF</button>
+            ${items.length ? `<button class="btn btn-primary" data-payall-modal="${esc(unitId)}"><i class="bi bi-check2-all me-1"></i>Pagar todo</button>` : ''}</div>`, { size: 'modal-lg' });
+        el.addEventListener('click', (ev) => {
+          const b = ev.target.closest('button');
+          if (!b) return;
+          if (b.dataset.payItem) { hide(); payOne(items.find((c) => c.id === b.dataset.payItem), r); }
+          if (b.dataset.payallModal) { hide(); payAll(unitId); }
+          if (b.dataset.pdfModal) CuentaCobro.open({ unit: unitId });
+        });
+      }
+
+      function payOne(c, r = c) {
+        App.formDialog({
+          title: `Registrar pago · ${unitLabel(r)}`, submit: 'Registrar', data: { paid_at: today },
+          fields: `<p class="small">${esc(App.CONCEPTS[c.concept])} ${esc(c.period || '')} por <strong>${money(c.amount)}</strong></p>${payFields}`,
+          onSave: async (d) => { await App.api(`/charges/${c.id}/pay`, { method: 'POST', body: d }); App.toast('Pago registrado'); reload(); },
+        });
+      }
+      function payAll(unitId) {
+        const r = units.find((x) => x.unit_id === unitId);
+        App.formDialog({
+          title: `Pago total · ${unitLabel(r)}`, submit: 'Registrar pago', data: { paid_at: today },
+          fields: `<p class="small">Marca como pagados ${r.count} cobros por <strong>${money(r.total)}</strong>.</p>${payFields}`,
+          onSave: async (d) => { await App.api(`/units/${unitId}/pay-all`, { method: 'POST', body: d }); App.toast('Pago registrado'); reload(); },
+        });
+      }
+
+      async function cobrar(unitId) {
+        try { const { unit: u } = await App.api(`/units/${unitId}`); App.messageDialog(u, { aiCobro: true }); } catch (err) { App.fail(err); }
+      }
+
+      function newCharge() {
         if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
         const pid = App.currentProperty() || App.properties[0].id;
-        const { el, form } = App.formDialog({
+        const { form } = App.formDialog({
           title: 'Nuevo cobro',
-          data: { property_id: pid, concept: 'ext', due_date: App.addDays(today, 15), period: today.slice(0, 7) },
+          data: { property_id: pid, concept: 'other', due_date: App.addDays(today, 15), period: today.slice(0, 7) },
           fields: `
             <div class="row g-2">
               <div class="col-sm-6"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
               <div class="col-sm-6"><label class="form-label small">Unidad *</label><select name="unit_id" class="form-select" required></select></div>
               <div class="col-sm-6"><label class="form-label small">Concepto</label><select name="concept" class="form-select">${Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
               <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control"></div>
-              <div class="col-12"><label class="form-label small">Descripción</label><input name="description" class="form-control" maxlength="200" placeholder="Fondo de obras de fachada"></div>
+              <div class="col-12"><label class="form-label small">Descripción</label><input name="description" class="form-control" maxlength="200" placeholder="Daño en zona común, multa por convivencia…"></div>
               <div class="col-sm-6"><label class="form-label small">Valor (COP) *</label><input name="amount" type="number" min="1" step="1" class="form-control" required></div>
               <div class="col-sm-6"><label class="form-label small">Vence *</label><input name="due_date" type="date" class="form-control" required></div>
             </div>`,
-          onSave: async (d) => { await App.api('/charges', { method: 'POST', body: d }); App.toast('Cobro creado'); load(); },
+          onSave: async (d) => { await App.api('/charges', { method: 'POST', body: d }); App.toast('Cobro creado'); reload(); },
         });
-        const fill = async () => {
-          const us = await units(form.elements.property_id.value);
-          form.elements.unit_id.innerHTML = us.map((u) => `<option value="${esc(u.id)}" ${u.id === unit ? 'selected' : ''}>${esc(unitLabel(u))} · ${esc(u.owner_name || '')}</option>`).join('');
-        };
-        form.elements.property_id.addEventListener('change', fill);
-        fill().catch(App.fail);
+        App.bindUnitSelect(form, { selected: unit, blank: '' });
       }
 
-      function generate() {
+      // Liquidaciones (los valores por defecto vienen de Ajustes → Cartera y cuenta de cobro).
+      async function liquidar(kind) {
         if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const b = await getBilling();
         const pid = App.currentProperty() || App.properties[0].id;
-        App.formDialog({
-          title: 'Generar cuotas de administración', submit: 'Generar',
-          data: { property_id: pid, period: today.slice(0, 7), due_date: today.slice(0, 8) + '10', mode: 'coefficient' },
-          fields: `
-            <p class="small text-body-secondary">Crea la cuota del periodo para todas las unidades del conjunto. Las que ya la tengan no se duplican.</p>
-            <div class="row g-2">
-              <div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
+        const prop = `<div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>`;
+        const due = `${today.slice(0, 8)}${String(b.due_day).padStart(2, '0')}`;
+        const D = {
+          admin: ['Cuotas de administración del mes', '/charges/generate', { period: today.slice(0, 7), due_date: due, mode: 'coefficient' }, `
+            <p class="small text-body-secondary">Crea la cuota del periodo para todas las unidades. Las que ya la tengan no se duplican.</p>
+            <div class="row g-2">${prop}
               <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control" required></div>
               <div class="col-sm-6"><label class="form-label small">Vence</label><input name="due_date" type="date" class="form-control" required></div>
-              <div class="col-12"><label class="form-label small">Cómo calcular</label>
-                <select name="mode" class="form-select">
-                  <option value="coefficient">Presupuesto mensual repartido por coeficiente</option>
-                  <option value="area">Valor por m² × área</option>
-                  <option value="fixed">Valor igual para cada unidad</option>
-                </select></div>
-              <div class="col-12"><label class="form-label small">Valor (COP)</label><input name="amount" type="number" min="1" step="1" class="form-control" required placeholder="Presupuesto total, valor por m² o valor fijo"></div>
-            </div>`,
-          onSave: async (d) => {
-            const r = await App.api('/charges/generate', { method: 'POST', body: d });
-            App.toast(`Cuotas creadas: ${r.created}${r.skipped ? ` · ya existían ${r.skipped}` : ''}`);
-            load();
-          },
-        });
+              <div class="col-12"><label class="form-label small">Cómo calcular</label><select name="mode" class="form-select">
+                <option value="coefficient">Presupuesto mensual repartido por coeficiente</option><option value="area">Valor por m² × área</option><option value="fixed">Valor igual para cada unidad</option></select></div>
+              <div class="col-12"><label class="form-label small">Valor (COP)</label><input name="amount" type="number" min="1" class="form-control" required placeholder="Presupuesto total, valor por m² o valor fijo"></div></div>`,
+            (r) => `Cuotas creadas: ${r.created}${r.skipped ? ` · ya existían ${r.skipped}` : ''}`],
+          int: ['Intereses de mora (INT)', '/charges/interest', { rate: b.interest_rate, base: b.interest_base, period: today.slice(0, 7) }, `
+            <p class="small text-body-secondary">Un cobro de intereses por unidad sobre su saldo vencido. Si la unidad ya tiene intereses del periodo, no se repiten. Verifica que la tasa no supere la máxima legal vigente.</p>
+            <div class="row g-2">${prop}
+              <div class="col-sm-4"><label class="form-label small">Tasa mensual (%)</label><input name="rate" type="number" step="0.01" min="0.01" max="10" class="form-control" required></div>
+              <div class="col-sm-4"><label class="form-label small">Sobre</label><select name="base" class="form-select"><option value="admin">Cuotas de administración</option><option value="all">Todo lo vencido</option></select></div>
+              <div class="col-sm-4"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control" required></div></div>`,
+            (r) => `Intereses liquidados a ${r.created} unidades (${r.rate}%)`],
+          jur: ['Cobro jurídico (JUR)', '/charges/legal', { pct: b.legal_pct, days: b.legal_days }, `
+            <p class="small text-body-secondary">Honorarios de cobro jurídico sobre lo vencido, a las unidades que superan los días de mora. Uno por unidad y mes.</p>
+            <div class="row g-2">${prop}
+              <div class="col-sm-6"><label class="form-label small">Honorarios (%)</label><input name="pct" type="number" step="0.1" min="0.1" max="50" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Desde (días de mora)</label><input name="days" type="number" min="1" max="720" class="form-control" required></div></div>`,
+            (r) => `Cobro jurídico a ${r.created} unidades (${r.pct}% · mora > ${r.days} días)`],
+          rtc: ['Retroactivo (RTC)', '/charges/retro', { pct: b.retro_pct || '', from: `${today.slice(0, 4)}-01`, to: today.slice(0, 7), due_date: App.addDays(today, 15) }, `
+            <p class="small text-body-secondary">Cobra la diferencia de un incremento aprobado por asamblea sobre las cuotas de administración ya facturadas en el rango.</p>
+            <div class="row g-2">${prop}
+              <div class="col-sm-4"><label class="form-label small">Incremento (%)</label><input name="pct" type="number" step="0.01" min="0.01" max="100" class="form-control" required></div>
+              <div class="col-sm-4"><label class="form-label small">Desde</label><input name="from" type="month" class="form-control" required></div>
+              <div class="col-sm-4"><label class="form-label small">Hasta</label><input name="to" type="month" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Vence</label><input name="due_date" type="date" class="form-control" required></div></div>`,
+            (r) => `Retroactivo liquidado a ${r.created} unidades`],
+          ext: ['Cuota extraordinaria (EXT)', '/charges/extra', { mode: b.ext_mode, installments: b.ext_installments, due_date: due }, `
+            <p class="small text-body-secondary">Reparte el valor aprobado por asamblea entre todas las unidades del conjunto, en una o varias cuotas mensuales.</p>
+            <div class="row g-2">${prop}
+              <div class="col-12"><label class="form-label small">Descripción *</label><input name="description" class="form-control" required maxlength="160" placeholder="Impermeabilización de fachada"></div>
+              <div class="col-sm-6"><label class="form-label small">Valor total (COP) *</label><input name="total" type="number" min="1" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Reparto</label><select name="mode" class="form-select"><option value="coefficient">Por coeficiente</option><option value="equal">Partes iguales</option></select></div>
+              <div class="col-sm-6"><label class="form-label small">Número de cuotas</label><input name="installments" type="number" min="1" max="24" class="form-control" required></div>
+              <div class="col-sm-6"><label class="form-label small">Primer vencimiento</label><input name="due_date" type="date" class="form-control" required></div></div>`,
+            (r) => `Cuota extraordinaria: ${r.created} cobros en ${r.units} unidades`],
+        }[kind];
+        const [title, path, data, fields, msg] = D;
+        App.formDialog({ title, data: { property_id: pid, ...data }, fields, submit: 'Liquidar',
+          onSave: async (d) => { const r = await App.api(path, { method: 'POST', body: d }); App.toast(msg(r)); reload(); } });
       }
 
-      function interest() {
-        if (!App.properties.length) return;
+      async function pdfBatch() {
+        if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
+        const b = await getBilling();
         const pid = App.currentProperty() || App.properties[0].id;
         App.formDialog({
-          title: 'Liquidar intereses de mora', submit: 'Liquidar',
-          data: { property_id: pid, rate: '2', period: today.slice(0, 7) },
+          title: 'Cuentas de cobro del conjunto', submit: 'Generar PDF', data: { property_id: pid, format: b.format, all: false },
           fields: `
-            <p class="small text-body-secondary">Crea un cobro de intereses por unidad sobre su saldo vencido (sin incluir intereses anteriores). Verifica que la tasa no supere la máxima legal vigente.</p>
             <div class="row g-2">
               <div class="col-12"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
-              <div class="col-sm-6"><label class="form-label small">Tasa mensual (%)</label><input name="rate" type="number" step="0.01" min="0.01" max="10" class="form-control" required></div>
-              <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control" required></div>
+              <div class="col-12"><label class="form-label small">Formato</label><select name="format" class="form-select">
+                <option value="half">Media carta (una cuenta por hoja)</option>
+                <option value="letter_copy">Carta: original y copia</option>
+                <option value="letter_series">Carta en serie (dos unidades por hoja)</option></select></div>
+              <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="all" id="allU"><label class="form-check-label" for="allU">Incluir unidades sin saldo (paz y salvo)</label></div></div>
             </div>`,
-          onSave: async (d) => { const r = await App.api('/charges/interest', { method: 'POST', body: d }); App.toast(`Intereses liquidados a ${r.created} unidades`); load(); },
+          onSave: async (d) => { const n = await CuentaCobro.open({ property: d.property_id, all: d.all, format: d.format }); if (n) App.toast(`${n} cuentas de cobro generadas`); },
         });
       }
 
-      $('rows').addEventListener('click', async (ev) => {
+      // ---------- eventos ----------
+      document.querySelector('main').addEventListener('click', async (ev) => {
         const b = ev.target.closest('button');
         if (!b) return;
         try {
-          if (b.dataset.pay) {
-            const c = items.find((x) => x.id === b.dataset.pay);
-            App.formDialog({
-              title: `Registrar pago · ${unitLabel(c)}`, submit: 'Registrar',
-              data: { paid_at: today },
-              fields: `<p class="small">${esc(App.CONCEPTS[c.concept])} ${esc(c.period || '')} por <strong>${money(c.amount)}</strong></p>
-                <div class="row g-2"><div class="col-sm-6"><label class="form-label small">Fecha de pago</label><input name="paid_at" type="date" class="form-control" required></div>
-                <div class="col-sm-6"><label class="form-label small">Referencia</label><input name="payment_ref" class="form-control" maxlength="120" placeholder="PSE, consignación…"></div></div>`,
-              onSave: async (d) => { await App.api(`/charges/${c.id}/pay`, { method: 'POST', body: d }); App.toast('Pago registrado'); load(); },
-            });
-          }
-          if (b.dataset.unpay && (await App.confirmAction('¿Anular el pago de este cobro?'))) { await App.api(`/charges/${b.dataset.unpay}/unpay`, { method: 'POST' }); load(); }
-          if (b.dataset.del && (await App.confirmAction('¿Eliminar este cobro?'))) { await App.api(`/charges/${b.dataset.del}`, { method: 'DELETE' }); load(); }
+          if (b.dataset.tab) return showTab(b.dataset.tab);
+          if (b.dataset.items) return itemsDialog(b.dataset.items);
+          if (b.dataset.pdf) return CuentaCobro.open({ unit: b.dataset.pdf });
+          if (b.dataset.cobrar) return cobrar(b.dataset.cobrar);
+          if (b.dataset.payall) return payAll(b.dataset.payall);
+          if (b.dataset.liq) return liquidar(b.dataset.liq);
+          if (b.id === 'clearUnit') { unit = ''; history.replaceState(null, '', location.pathname); return loadMoves(); }
+          if (b.dataset.pay) return payOne(moves.find((x) => x.id === b.dataset.pay));
+          if (b.dataset.unpay && (await App.confirmAction('¿Anular el pago de este cobro?'))) { await App.api(`/charges/${b.dataset.unpay}/unpay`, { method: 'POST' }); reload(); }
+          if (b.dataset.del && (await App.confirmAction('¿Eliminar este cobro?'))) { await App.api(`/charges/${b.dataset.del}`, { method: 'DELETE' }); reload(); }
         } catch (err) { App.fail(err); }
       });
-      document.addEventListener('click', (ev) => { if (ev.target.closest('#clearUnit')) { unit = ''; history.replaceState(null, '', location.pathname); load(); } });
-      ['status', 'concept'].forEach((id) => $(id).addEventListener('change', load));
+      $('scope').addEventListener('change', loadUnits);
+      ['status', 'concept'].forEach((id) => $(id).addEventListener('change', loadMoves));
       $('newBtn').addEventListener('click', newCharge);
-      $('genBtn').addEventListener('click', generate);
-      $('interestBtn').addEventListener('click', interest);
+      $('pdfBatch').addEventListener('click', pdfBatch);
       if (App.param('status')) $('status').value = App.param('status');
-      App.onProperty(load);
-      load();
+      App.onProperty(reload);
+      loadSummary().catch(App.fail);
+      showTab(tab);
     })();
   </script>
   <span id="cdr-ready" hidden></span>

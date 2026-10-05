@@ -24,8 +24,7 @@
     </div>
     <div class="row g-3 mb-3" id="kpis"></div>
     <div class="card">
-      <div class="filters"><div class="input-group grow"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="search" id="q" class="form-control" placeholder="Nombre, raza, unidad o propietario"></div></div>
-      <div class="list-group list-group-flush" id="list"></div>
+      <table class="table table-hover align-middle w-100" id="list"></table>
     </div>
   </main>
 
@@ -39,27 +38,31 @@
       const SP = { perro: ['Perro', 'bi-heart'], gato: ['Gato', 'bi-heart'], ave: ['Ave', 'bi-feather'], otro: ['Otro', 'bi-bug'] };
       const today = App.todayLocal();
       let items = [];
-      let timer;
       const photo = (id) => `/api/admin/files/${id}${App.slug ? `?b=${App.slug}` : ''}`;
 
+      const COLS = [
+        { title: 'Mascota', value: (p) => p.name,
+          html: (p) => `<div class="d-flex align-items-center gap-2">${p.photo_id ? `<img class="pet-photo" style="width:2.4rem;height:2.4rem" src="${photo(p.photo_id)}" alt="">` : `<div class="pet-photo" style="width:2.4rem;height:2.4rem;font-size:1rem"><i class="bi ${SP[p.species][1]}"></i></div>`}<span class="fw-semibold">${esc(p.name)}</span></div>` },
+        { title: 'Especie', value: (p) => SP[p.species][0] },
+        { title: 'Raza', value: (p) => p.breed || '' },
+        { title: 'Unidad', value: (p) => unitLabel(p) },
+        { title: 'Propietario', value: (p) => p.owner_name || '', html: (p) => `${esc(p.owner_name || '')}<div class="small text-body-secondary">${esc(p.owner_phone || '')}</div>` },
+        { title: 'Conjunto', value: (p) => p.property_name },
+        { title: 'Vacunas hasta', value: (p) => p.vaccinated_until || '',
+          html: (p) => (p.vaccinated_until && p.vaccinated_until >= today ? App.badge('Al día · ' + App.fmtDate(p.vaccinated_until), 'success') : App.badge(p.vaccinated_until ? 'Vencidas · ' + App.fmtDate(p.vaccinated_until) : 'Sin vacunas', 'warning')) },
+        { title: 'PPP', value: (p) => (p.potentially_dangerous ? 'Sí' : 'No'), html: (p) => (p.potentially_dangerous ? App.badge('PPP', 'danger') : '') },
+        { title: 'Notas', exportOnly: true, value: (p) => p.notes || '' },
+      ];
       async function load() {
         let d;
-        try { d = await App.api('/pets' + App.qs({ q: $('q').value.trim() })); } catch (err) { return App.fail(err); }
+        try { d = await App.api('/pets' + App.qs()); } catch (err) { return App.fail(err); }
         items = d.items;
         $('count').textContent = `(${items.length})`;
         const unvax = items.filter((p) => !p.vaccinated_until || p.vaccinated_until < today).length;
         const k = (l, v, cls = '') => `<div class="col-6 col-md-3"><div class="stat-strip ${cls}"><div class="lbl">${l}</div><div class="val fs-5">${v}</div></div></div>`;
         $('kpis').innerHTML = k('Perros', items.filter((p) => p.species === 'perro').length) + k('Gatos', items.filter((p) => p.species === 'gato').length) +
           k('Vacunas vencidas', unvax, unvax ? 'red' : '') + k('Potencialmente peligrosos', items.filter((p) => p.potentially_dangerous).length, 'violet');
-        $('list').innerHTML = items.length ? items.map((p) => {
-          const vax = p.vaccinated_until && p.vaccinated_until >= today;
-          return `<div class="list-group-item list-group-item-action d-flex align-items-center gap-3" data-id="${esc(p.id)}" role="button">
-            ${p.photo_id ? `<img class="pet-photo" src="${photo(p.photo_id)}" alt="">` : `<div class="pet-photo"><i class="bi ${SP[p.species][1]}"></i></div>`}
-            <div class="flex-grow-1 min-w-0"><div class="fw-semibold">${esc(p.name)} <span class="text-body-secondary fw-normal small">${esc(SP[p.species][0])}${p.breed ? ' · ' + esc(p.breed) : ''}</span></div>
-              <div class="small text-body-secondary">${esc(unitLabel(p))} · ${esc(p.owner_name || '')}${App.currentProperty() ? '' : ' · ' + esc(p.property_name)}</div></div>
-            <div class="text-end small">${p.potentially_dangerous ? App.badge('PPP', 'danger') + ' ' : ''}${vax ? App.badge('Vacunas al día', 'success') : App.badge(p.vaccinated_until ? 'Vacunas vencidas' : 'Sin vacunas', 'warning')}</div>
-          </div>`;
-        }).join('') : '<div class="empty">Ninguna mascota registrada.</div>';
+        await App.dataTable($('list'), { columns: COLS, data: items, title: 'Censo de mascotas' });
       }
 
       function edit(p) {
@@ -96,8 +99,7 @@
         el.addEventListener('hidden.bs.modal', load);
       }
 
-      $('list').addEventListener('click', (ev) => { const r = ev.target.closest('[data-id]'); if (r) edit(items.find((x) => x.id === r.dataset.id)); });
-      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      App.onRowClick($('list'), (id) => edit(items.find((x) => x.id === id)));
       $('newBtn').addEventListener('click', () => edit(null));
       App.onProperty(load);
       load();

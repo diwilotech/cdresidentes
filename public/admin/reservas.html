@@ -34,7 +34,7 @@
         </div>
         <div class="card">
           <div class="card-header"><i class="bi bi-list-check me-2 text-primary"></i>Reservas del mes <span class="text-body-secondary fw-normal" id="count"></span></div>
-          <div class="list-group list-group-flush" id="list"></div>
+          <table class="table table-hover align-middle w-100" id="list"></table>
         </div>
       </div>
       <div class="col-xl-4">
@@ -72,6 +72,20 @@
           </div>`).join('') : '<div class="empty small">Aún no hay zonas comunes. Crea la primera para recibir reservas.</div>';
       }
 
+      const COLS = [
+        { title: 'Zona', value: (b) => b.amenity_name, html: (b) => `<span class="fw-semibold">${esc(b.amenity_name)}</span>` },
+        { title: 'Fecha', value: (b) => b.date, html: (b) => `<span class="text-nowrap">${App.fmtDate(b.date, { weekday: true })}</span>` },
+        { title: 'Horario', value: (b) => `${b.start_time}-${b.end_time}` },
+        { title: 'Unidad', value: (b) => (b.number ? unitLabel(b) : ''), html: (b) => (b.number ? esc(unitLabel(b)) : '—') },
+        { title: 'Responsable', value: (b) => b.holder || b.owner_name || '' },
+        { title: 'Valor', sum: true, value: (b) => b.amount || 0, html: (b) => money(b.amount) },
+        { title: 'Pago', value: (b) => (b.paid ? 'Pagada' : 'Sin pagar'), html: (b) => (b.paid ? '<i class="bi bi-check-circle-fill text-success"></i> Pagada' : '<span class="text-danger">Sin pagar</span>') },
+        { title: 'Estado', value: (b) => ST[b.status][0], html: (b) => App.badge(ST[b.status][0], ST[b.status][1]) },
+        { title: 'Acciones', noExport: true, orderable: false, className: 'text-end text-nowrap',
+          html: (b) => `${b.status === 'pending' ? `<button class="btn btn-sm btn-outline-success" data-set="approved" data-id="${esc(b.id)}" title="Aprobar"><i class="bi bi-check2"></i></button>
+            <button class="btn btn-sm btn-outline-danger" data-set="rejected" data-id="${esc(b.id)}" title="Rechazar"><i class="bi bi-x"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(b.id)}" title="Editar"><i class="bi bi-pencil"></i></button>` },
+      ];
       async function loadBookings() {
         let d;
         try { d = await App.api('/bookings' + App.qs({ month })); } catch (err) { return App.fail(err); }
@@ -93,15 +107,7 @@
         }
         $('cal').innerHTML = html;
         $('count').textContent = `(${bookings.length})`;
-        $('list').innerHTML = bookings.length ? bookings.map((b) => `
-          <div class="list-group-item d-flex flex-wrap align-items-center gap-2">
-            <div class="flex-grow-1 min-w-0"><div class="fw-semibold">${esc(b.amenity_name)} · ${App.fmtDate(b.date, { weekday: true })} ${esc(b.start_time)}–${esc(b.end_time)}</div>
-              <div class="small text-body-secondary">${b.number ? esc(unitLabel(b)) + ' · ' : ''}${esc(b.holder || b.owner_name || '')} · ${money(b.amount)} ${b.paid ? '<i class="bi bi-check-circle-fill text-success"></i> pagada' : '<span class="text-danger">sin pagar</span>'}</div></div>
-            ${App.badge(ST[b.status][0], ST[b.status][1])}
-            ${b.status === 'pending' ? `<button class="btn btn-sm btn-outline-success" data-set="approved" data-id="${esc(b.id)}" title="Aprobar"><i class="bi bi-check2"></i></button>
-              <button class="btn btn-sm btn-outline-danger" data-set="rejected" data-id="${esc(b.id)}" title="Rechazar"><i class="bi bi-x"></i></button>` : ''}
-            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(b.id)}"><i class="bi bi-pencil"></i></button>
-          </div>`).join('') : '<div class="empty small">Sin reservas este mes.</div>';
+        await App.dataTable($('list'), { columns: COLS, data: bookings, order: [[1, 'asc']], title: `Reservas ${month}` });
       }
 
       function editAmenity(a) {

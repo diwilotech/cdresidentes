@@ -30,33 +30,24 @@
 
     <div class="card">
       <div class="filters">
-        <div class="input-group grow">
-          <span class="input-group-text"><i class="bi bi-search"></i></span>
-          <input type="search" id="q" class="form-control" placeholder="Unidad, propietario, documento, placa…">
-        </div>
         <select id="tower" class="form-select"><option value="">Torre: todas</option></select>
         <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
         <select id="debt" class="form-select"><option value="">Estado: todos</option><option value="0">Al día</option><option value="1">En mora</option></select>
         <button class="btn btn-outline-secondary" id="reset" title="Restaurar filtros"><i class="bi bi-arrow-counterclockwise"></i></button>
       </div>
-      <div class="table-responsive">
-        <table class="table table-hover table-clickable mb-0">
-          <thead><tr><th>Unidad</th><th>Propietario</th><th class="hide-xs">Arrendatario</th><th class="num hide-xs">Área · Coef.</th><th class="num">Saldo</th><th class="text-end">Acciones</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
+      <table class="table table-hover align-middle w-100" id="rows"></table>
     </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="/admin/assets/app.js"></script>
+  <script src="/admin/assets/cuenta-cobro.js"></script>
   <script>
     (async () => {
       if (!(await App.init('unidades'))) return;
       const { esc, money, unitLabel } = App;
       const $ = (id) => document.getElementById(id);
       let items = [];
-      let timer;
       $('kind').innerHTML += Object.entries(App.KIND).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
 
       const FIELDS = () => `
@@ -83,28 +74,38 @@
           <div class="col-12"><label class="form-label small">Observaciones</label><textarea name="notes" class="form-control" rows="2" maxlength="2000"></textarea></div>
         </div>`;
 
+      const COLS = [
+        { title: 'Unidad', value: (u) => `${unitLabel(u)}${App.currentProperty() ? '' : ' · ' + u.property_name}`,
+          html: (u) => `<div class="fw-semibold">${esc(unitLabel(u))}</div><div class="small text-body-secondary">${esc(App.KIND[u.kind] || u.kind)}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</div>` },
+        { title: 'Tipo', exportOnly: true, value: (u) => App.KIND[u.kind] || u.kind },
+        { title: 'Propietario', value: (u) => u.owner_name || '', html: (u) => `<div class="fw-medium">${esc(u.owner_name || '—')}</div><div class="small text-body-secondary">${esc(u.owner_phone || '')}</div>` },
+        { title: 'Documento', exportOnly: true, value: (u) => u.owner_doc || '' },
+        { title: 'Celular', exportOnly: true, value: (u) => u.owner_phone || '' },
+        { title: 'Correo', exportOnly: true, value: (u) => u.owner_email || '' },
+        { title: 'Arrendatario', value: (u) => u.tenant_name || '',
+          html: (u) => (u.tenant_name ? `<div>${esc(u.tenant_name)}</div><div class="small text-body-secondary">${esc(u.tenant_phone || '')}</div>` : `<span class="text-body-secondary small">${u.occupancy === 'vacant' ? 'Desocupada' : 'No aplica'}</span>`) },
+        { title: 'Área m²', sum: true, money: false, value: (u) => u.area_m2 || 0, html: (u) => (u.area_m2 ? App.fmtNum(u.area_m2, 2) : '—') },
+        { title: 'Coef. %', sum: true, money: false, value: (u) => u.coefficient || 0, html: (u) => (u.coefficient != null ? App.fmtNum(u.coefficient, 4) : '—') },
+        { title: 'Habitantes', exportOnly: true, sum: true, money: false, value: (u) => u.residents || 0 },
+        { title: 'Vehículos', exportOnly: true, value: (u) => u.vehicles || '' },
+        { title: 'Vencido', sum: true, value: (u) => u.overdue,
+          html: (u) => (u.overdue > 0 ? `<span class="fw-bold text-danger">${money(u.overdue)}</span><div>${App.badge('En mora', 'danger')}</div>` : `<span class="mono">${money(0)}</span><div>${App.badge('Al día', 'success')}</div>`) },
+        { title: 'Saldo total', sum: true, value: (u) => u.balance, html: (u) => `<span class="mono">${money(u.balance)}</span>` },
+        { title: 'Acciones', noExport: true, orderable: false, className: 'text-end text-nowrap',
+          html: (u) => `${u.owner_phone ? `<button class="btn btn-sm btn-outline-success" data-wa="${esc(u.id)}" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>` : ''}
+            ${u.overdue > 0 ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(u.id)}" title="Cobrar con AI"><i class="bi bi-stars"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(u.id)}" title="Editar"><i class="bi bi-pencil"></i></button>` },
+      ];
+
       async function load() {
-        const params = { q: $('q').value.trim(), tower: $('tower').value, kind: $('kind').value, debt: $('debt').value };
+        const params = { tower: $('tower').value, kind: $('kind').value, debt: $('debt').value };
         let d;
         try { d = await App.api('/units' + App.qs(params)); } catch (err) { return App.fail(err); }
         items = d.items;
         const tv = $('tower').value;
         $('tower').innerHTML = '<option value="">Torre: todas</option>' + d.towers.map((t) => `<option ${t === tv ? 'selected' : ''}>${esc(t)}</option>`).join('');
         $('count').textContent = `(${items.length})`;
-        $('rows').innerHTML = items.length ? items.map((u) => `
-          <tr data-id="${esc(u.id)}">
-            <td><div class="fw-semibold">${esc(unitLabel(u))}</div><div class="small text-body-secondary">${esc(App.KIND[u.kind] || u.kind)}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</div></td>
-            <td><div class="fw-medium">${esc(u.owner_name || '—')}</div><div class="small text-body-secondary">${esc(u.owner_phone || '')}</div></td>
-            <td class="hide-xs">${u.tenant_name ? `<div>${esc(u.tenant_name)}</div><div class="small text-body-secondary">${esc(u.tenant_phone || '')}</div>` : `<span class="text-body-secondary small">${u.occupancy === 'vacant' ? 'Desocupada' : 'No aplica'}</span>`}</td>
-            <td class="num hide-xs small">${u.area_m2 ? App.fmtNum(u.area_m2, 2) + ' m²' : '—'}<br><span class="text-body-secondary">${u.coefficient != null ? App.fmtNum(u.coefficient, 4) + '%' : ''}</span></td>
-            <td class="num">${u.overdue > 0 ? `<span class="fw-bold text-danger">${money(u.overdue)}</span><div>${App.badge('En mora', 'danger')}</div>` : `<span class="mono">${money(u.balance)}</span><div>${App.badge('Al día', 'success')}</div>`}</td>
-            <td class="text-end text-nowrap">
-              ${u.owner_phone ? `<button class="btn btn-sm btn-outline-success" data-wa="${esc(u.id)}" title="WhatsApp"><i class="bi bi-whatsapp"></i></button>` : ''}
-              ${u.overdue > 0 ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(u.id)}" title="Cobrar con AI"><i class="bi bi-stars"></i><span class="d-none d-xl-inline ms-1">Cobrar</span></button>` : ''}
-              <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(u.id)}" title="Editar"><i class="bi bi-pencil"></i></button>
-            </td>
-          </tr>`).join('')
-          : `<tr><td colspan="6" class="empty">${App.properties.length ? 'Sin unidades con estos filtros.' : 'Primero crea un conjunto en la sección Conjuntos.'}</td></tr>`;
+        await App.dataTable($('rows'), { columns: COLS, data: items, title: 'Propietarios y unidades' });
 
         const debtors = items.filter((u) => u.overdue > 0);
         if (debtors.length) {
@@ -158,6 +159,7 @@
             <div class="d-flex flex-wrap gap-2 mb-3">
               ${pending.length ? `<button class="btn btn-sm btn-primary" data-payall><i class="bi bi-check2-all me-1"></i>Registrar pago total</button>` : ''}
               <button class="btn btn-sm btn-ai" data-msg><i class="bi bi-stars me-1"></i>${u.overdue ? 'Cobrar con IA' : 'Enviar mensaje'}</button>
+              <button class="btn btn-sm btn-outline-secondary" data-pdf><i class="bi bi-file-earmark-pdf me-1"></i>Cuenta de cobro</button>
               <a class="btn btn-sm btn-outline-secondary" href="/admin/cartera?unit=${esc(u.id)}"><i class="bi bi-receipt me-1"></i>Ver en cartera</a>
             </div>
             <div class="eyebrow mb-2">Movimientos</div>
@@ -175,6 +177,7 @@
             <div class="eyebrow mt-3 mb-1">Documentos</div><div id="files"></div>
           </div>`, { size: 'modal-lg' });
         App.attachments(el.querySelector('#files'), 'unit', u.id);
+        el.querySelector('[data-pdf]').addEventListener('click', () => CuentaCobro.open({ unit: u.id }));
         el.querySelector('[data-msg]').addEventListener('click', () => { hide(); App.messageDialog(u, { aiCobro: u.overdue > 0 }); });
         el.querySelector('[data-payall]')?.addEventListener('click', () => {
           hide();
@@ -198,12 +201,10 @@
           const u = find(b.dataset.wa);
           return App.messageDialog(u, { text: `Hola ${u.owner_name || ''}, te saludamos de la administración de ${u.property_name}. ` });
         }
-        const tr = ev.target.closest('tr[data-id]');
-        if (tr) detail(tr.dataset.id);
       });
-      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+      App.onRowClick($('rows'), detail);
       ['tower', 'kind', 'debt'].forEach((id) => $(id).addEventListener('change', load));
-      $('reset').addEventListener('click', () => { $('q').value = ''; $('tower').value = ''; $('kind').value = ''; $('debt').value = ''; load(); });
+      $('reset').addEventListener('click', () => { $('rows')._dt?.search('').draw(); $('tower').value = ''; $('kind').value = ''; $('debt').value = ''; load(); });
       $('newBtn').addEventListener('click', () => {
         if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');
         edit(null);

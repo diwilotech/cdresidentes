@@ -13,6 +13,7 @@ const FIELDS = {
   email: (v) => email(v, { label: 'Correo' }),
   towers: (v) => str(v, { max: 300, label: 'Torres' }),
   admin_fee: (v) => num(v, { min: 0, max: 1e7, label: 'Cuota por m²' }),
+  payment_info: (v) => str(v, { max: 600, label: 'Datos de pago' }),
   notes: (v) => str(v, { max: 2000, label: 'Notas' }),
   status: (v) => oneOf(v, ['active', 'archived'], { label: 'Estado', fallback: 'active' }),
 };

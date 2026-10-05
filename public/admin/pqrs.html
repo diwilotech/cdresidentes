@@ -29,16 +29,10 @@
 
     <div class="card">
       <div class="filters">
-        <div class="input-group grow"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="search" id="q" class="form-control" placeholder="Buscar asunto, quien reporta o unidad"></div>
         <select id="status" class="form-select"><option value="">Estado: todos</option><option value="open">Abiertas</option><option value="in_progress">En gestión</option><option value="closed">Cerradas</option></select>
         <select id="category" class="form-select"><option value="">Categoría: todas</option></select>
       </div>
-      <div class="table-responsive">
-        <table class="table table-hover table-clickable mb-0">
-          <thead><tr><th>Asunto</th><th class="hide-xs">Categoría</th><th class="hide-xs">Unidad</th><th>Estado</th><th class="hide-xs">Radicada</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
+      <table class="table table-hover align-middle w-100" id="rows"></table>
     </div>
   </main>
 
@@ -55,11 +49,25 @@
       const PRI = { alta: 'danger', normal: 'secondary', baja: 'light' };
       $('category').innerHTML += Object.entries(CAT).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
       let items = [];
-      let timer;
 
+      const COLS = [
+        { title: 'Asunto', value: (q) => q.subject,
+          html: (q) => `<div class="fw-semibold">${q.priority === 'alta' ? '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>' : ''}${esc(q.subject)}</div><div class="small text-body-secondary">${esc(KIND[q.kind])}${q.reporter ? ' · ' + esc(q.reporter) : ''}</div>` },
+        { title: 'Tipo', exportOnly: true, value: (q) => KIND[q.kind] },
+        { title: 'Categoría', value: (q) => CAT[q.category], html: (q) => App.badge(CAT[q.category], q.priority === 'alta' ? 'danger' : 'secondary') },
+        { title: 'Prioridad', value: (q) => q.priority },
+        { title: 'Unidad', value: (q) => (q.number ? unitLabel(q) : ''), html: (q) => (q.number ? esc(unitLabel(q)) : '—') },
+        { title: 'Conjunto', value: (q) => q.property_name },
+        { title: 'Estado', value: (q) => ST[q.status][0], html: (q) => App.badge(ST[q.status][0], ST[q.status][1]) },
+        { title: 'Radicada', value: (q) => q.created_at, html: (q) => `<span class="text-nowrap small">${App.fmtDate(q.created_at)}</span>` },
+        { title: 'Quién reporta', exportOnly: true, value: (q) => q.reporter || '' },
+        { title: 'Detalle', exportOnly: true, value: (q) => q.detail || '' },
+        { title: 'Respuesta', exportOnly: true, value: (q) => q.response || '' },
+        { title: 'Cerrada', exportOnly: true, value: (q) => q.closed_at || '' },
+      ];
       async function load() {
         let d;
-        try { d = await App.api('/pqrs' + App.qs({ q: $('q').value.trim(), status: $('status').value, category: $('category').value })); } catch (err) { return App.fail(err); }
+        try { d = await App.api('/pqrs' + App.qs({ status: $('status').value, category: $('category').value })); } catch (err) { return App.fail(err); }
         items = d.items;
         const k = (l, v, cls = '') => `<div class="col-6 col-md-3"><div class="stat-strip ${cls}"><div class="lbl">${l}</div><div class="val fs-5">${v}</div></div></div>`;
         const byCat = {};
@@ -67,15 +75,7 @@
         const top = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
         $('kpis').innerHTML = k('PQRS abiertas', d.stats.open, 'red') + k('Tiempo prom. respuesta', d.stats.avg_hours != null ? `${App.fmtNum(d.stats.avg_hours)} h` : '—') +
           k('Categoría más frecuente', top ? `${CAT[top[0]]} (${top[1]})` : '—', 'violet') + k('Urgentes', items.filter((q) => q.priority === 'alta' && q.status !== 'closed').length, 'red');
-        $('rows').innerHTML = items.length ? items.map((q) => `
-          <tr data-id="${esc(q.id)}">
-            <td><div class="fw-semibold">${q.priority === 'alta' ? '<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>' : ''}${esc(q.subject)}</div>
-              <div class="small text-body-secondary">${esc(KIND[q.kind])}${q.reporter ? ' · ' + esc(q.reporter) : ''}${App.currentProperty() ? '' : ' · ' + esc(q.property_name)}</div></td>
-            <td class="hide-xs">${App.badge(CAT[q.category], PRI[q.priority] === 'danger' ? 'danger' : 'secondary')}</td>
-            <td class="hide-xs">${q.number ? esc(unitLabel(q)) : '—'}</td>
-            <td>${App.badge(ST[q.status][0], ST[q.status][1])}</td>
-            <td class="hide-xs small">${App.fmtDate(q.created_at)}</td>
-          </tr>`).join('') : '<tr><td colspan="5" class="empty">Sin PQRS registradas.</td></tr>';
+        await App.dataTable($('rows'), { columns: COLS, data: items, title: 'PQRS' });
       }
 
       function edit(q) {
@@ -126,9 +126,8 @@
         });
       }
 
-      $('rows').addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-id]'); if (tr) edit(items.find((x) => x.id === tr.dataset.id)); });
+      App.onRowClick($('rows'), (id) => edit(items.find((x) => x.id === id)));
       ['status', 'category'].forEach((id) => $(id).addEventListener('change', load));
-      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
       $('newBtn').addEventListener('click', () => edit(null));
       App.onProperty(load);
       load();

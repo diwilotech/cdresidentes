@@ -54,10 +54,9 @@
       <div class="col-lg-7">
         <div class="card">
           <div class="filters">
-            <div class="input-group grow"><span class="input-group-text"><i class="bi bi-search"></i></span><input type="search" id="q" class="form-control" placeholder="Buscar en comunicados…"></div>
             <select id="status" class="form-select"><option value="">Activos</option><option value="published">Publicados</option><option value="draft">Borradores</option><option value="archived">Archivados</option></select>
           </div>
-          <div class="list-group list-group-flush" id="list"></div>
+          <table class="table table-hover align-middle w-100" id="list"></table>
         </div>
       </div>
     </div>
@@ -80,27 +79,30 @@
       };
       let items = [];
       let editing = null;
-      let timer;
       const fillProps = () => { $('propSel').innerHTML = App.propertyOptions(App.currentProperty(), { blank: 'Todos los conjuntos' }); };
       fillProps();
 
+      const COLS = [
+        { title: 'Comunicado', value: (n) => n.title,
+          html: (n) => `<div class="fw-semibold">${esc(n.title)}</div><div class="small text-body-secondary text-truncate" style="max-width:26rem">${esc(n.body)}</div>` },
+        { title: 'Categoría', value: (n) => CAT[n.category] },
+        { title: 'Para', value: (n) => n.property_name || 'Todos los conjuntos' },
+        { title: 'Fecha', value: (n) => n.created_at, html: (n) => `<span class="text-nowrap small">${App.fmtDate(n.created_at)}</span>${n.author ? `<div class="small text-body-secondary">${esc(n.author)}</div>` : ''}` },
+        { title: 'WhatsApp', sum: true, money: false, value: (n) => n.sent_wa, html: (n) => `<i class="bi bi-whatsapp text-success me-1"></i>${n.sent_wa}` },
+        { title: 'Correos', sum: true, money: false, value: (n) => n.sent_email, html: (n) => `<i class="bi bi-envelope me-1"></i>${n.sent_email}` },
+        { title: 'Estado', value: (n) => ST[n.status][0], html: (n) => App.badge(ST[n.status][0], ST[n.status][1]) },
+        { title: 'Contenido', exportOnly: true, value: (n) => n.body },
+        { title: 'Acciones', noExport: true, orderable: false, className: 'text-end text-nowrap',
+          html: (n) => `${App.canManage() && n.status !== 'archived' ? `<button class="btn btn-sm btn-primary" data-send="${esc(n.id)}" title="Enviar a residentes"><i class="bi bi-send"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(n.id)}" title="Editar"><i class="bi bi-pencil"></i></button>
+            ${n.status !== 'archived' ? `<button class="btn btn-sm btn-outline-secondary" data-archive="${esc(n.id)}" title="Archivar"><i class="bi bi-archive"></i></button>` : `<button class="btn btn-sm btn-outline-secondary" data-restore="${esc(n.id)}" title="Restaurar"><i class="bi bi-arrow-counterclockwise"></i></button>`}
+            <button class="btn btn-sm btn-outline-secondary" data-copy="${esc(n.id)}" title="Copiar texto"><i class="bi bi-copy"></i></button>` },
+      ];
       async function load() {
         let d;
-        try { d = await App.api('/notices' + App.qs({ q: $('q').value.trim(), status: $('status').value })); } catch (err) { return App.fail(err); }
+        try { d = await App.api('/notices' + App.qs({ status: $('status').value })); } catch (err) { return App.fail(err); }
         items = d.items;
-        $('list').innerHTML = items.length ? items.map((n) => `
-          <div class="list-group-item py-3">
-            <div class="d-flex flex-wrap gap-2 align-items-center mb-1"><span class="fw-bold">${esc(n.title)}</span>${App.badge(ST[n.status][0], ST[n.status][1])}</div>
-            <div class="small text-body-secondary mb-2">${esc(CAT[n.category])} · ${esc(n.property_name || 'Todos los conjuntos')} · ${App.fmtDate(n.created_at)}${n.author ? ' · ' + esc(n.author) : ''}
-              ${n.sent_wa || n.sent_email ? ` · <i class="bi bi-whatsapp"></i> ${n.sent_wa} <i class="bi bi-envelope ms-1"></i> ${n.sent_email}` : ''}</div>
-            <div class="small mb-2" style="white-space:pre-wrap;max-height:6.5rem;overflow:hidden">${esc(n.body)}</div>
-            <div class="d-flex flex-wrap gap-2">
-              ${App.canManage() && n.status !== 'archived' ? `<button class="btn btn-sm btn-primary" data-send="${esc(n.id)}"><i class="bi bi-send me-1"></i>Enviar a residentes</button>` : ''}
-              <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(n.id)}"><i class="bi bi-pencil"></i></button>
-              ${n.status !== 'archived' ? `<button class="btn btn-sm btn-outline-secondary" data-archive="${esc(n.id)}" title="Archivar"><i class="bi bi-archive"></i></button>` : `<button class="btn btn-sm btn-outline-secondary" data-restore="${esc(n.id)}" title="Restaurar"><i class="bi bi-arrow-counterclockwise"></i></button>`}
-              <button class="btn btn-sm btn-outline-secondary" data-copy="${esc(n.id)}" title="Copiar texto"><i class="bi bi-copy"></i></button>
-            </div>
-          </div>`).join('') : '<div class="empty">No se encontraron comunicados con los criterios de búsqueda.</div>';
+        await App.dataTable($('list'), { columns: COLS, data: items, order: [[3, 'desc']], title: 'Comunicados' });
       }
 
       function resetForm() {
@@ -191,7 +193,6 @@
       $('draftBtn').addEventListener('click', () => save('draft'));
       $('cancelEdit').addEventListener('click', resetForm);
       $('status').addEventListener('change', load);
-      $('q').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
       App.onProperty(() => { if (!editing) fillProps(); load(); });
 
       // Borrador que llega desde el chat de Diwilo AI.

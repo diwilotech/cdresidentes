@@ -10,6 +10,7 @@ import * as dashboardApi from './api/dashboard.js';
 import * as propertiesApi from './api/properties.js';
 import * as unitsApi from './api/units.js';
 import * as chargesApi from './api/charges.js';
+import * as billingApi from './api/billing.js';
 import * as requestsApi from './api/requests.js';
 import * as pqrsApi from './api/pqrs.js';
 import * as bookingsApi from './api/bookings.js';
@@ -20,7 +21,7 @@ import * as aiApi from './api/ai.js';
 
 const router = new Router();
 // platform va antes que cualquier ruta con parámetros de negocio.
-for (const mod of [platformApi, authApi, businessApi, dashboardApi, propertiesApi, unitsApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi]) {
+for (const mod of [platformApi, authApi, businessApi, dashboardApi, propertiesApi, unitsApi, billingApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi]) {
   mod.routes(router);
 }
 

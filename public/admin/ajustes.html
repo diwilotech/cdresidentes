@@ -51,6 +51,39 @@
         </div>
       </div>
 
+      <div class="col-12" id="cartera">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-receipt-cutoff me-2 text-primary"></i>Cartera y cuenta de cobro</span>
+            <button class="btn btn-sm btn-outline-secondary" id="preview" type="button"><i class="bi bi-eye me-1"></i>Vista previa del PDF</button></div>
+          <div class="card-body">
+            <form id="billForm" novalidate>
+              <div class="eyebrow mb-2">Formato de la cuenta de cobro (PDF)</div>
+              <div class="row g-2 mb-3">
+                <div class="col-md-4"><label class="card p-3 h-100 mb-0" style="cursor:pointer"><div class="form-check mb-1"><input class="form-check-input" type="radio" name="format" value="half" id="fHalf"><span class="fw-semibold">Media carta</span></div>
+                  <span class="small text-body-secondary">21,6 × 14 cm. Una cuenta por hoja, para impresora o envío digital.</span></label></div>
+                <div class="col-md-4"><label class="card p-3 h-100 mb-0" style="cursor:pointer"><div class="form-check mb-1"><input class="form-check-input" type="radio" name="format" value="letter_copy"><span class="fw-semibold">Carta · original y copia</span></div>
+                  <span class="small text-body-secondary">La misma cuenta dos veces en una hoja carta: original para el propietario y copia para la administración, con línea de corte.</span></label></div>
+                <div class="col-md-4"><label class="card p-3 h-100 mb-0" style="cursor:pointer"><div class="form-check mb-1"><input class="form-check-input" type="radio" name="format" value="letter_series"><span class="fw-semibold">Carta · en serie</span></div>
+                  <span class="small text-body-secondary">Dos unidades distintas por hoja carta, para imprimir todo el conjunto en serie y cortar.</span></label></div>
+              </div>
+              <div class="row g-3">
+                <div class="col-6 col-md-3"><label class="form-label small">Día de vencimiento de la cuota</label><input name="due_day" type="number" min="1" max="28" class="form-control"></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Interés de mora (INT) % mensual</label><input name="interest_rate" type="number" step="0.01" min="0" max="10" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label small">Intereses sobre</label><select name="interest_base" class="form-select"><option value="admin">Solo cuotas de administración vencidas</option><option value="all">Todo lo vencido (sin intereses ni jurídico)</option></select></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Cobro jurídico (JUR) % honorarios</label><input name="legal_pct" type="number" step="0.1" min="0" max="50" class="form-control"></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Pasa a jurídico desde (días de mora)</label><input name="legal_days" type="number" min="30" max="720" class="form-control"></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Retroactivo (RTC) % de incremento</label><input name="retro_pct" type="number" step="0.01" min="0" max="100" class="form-control"></div>
+                <div class="col-6 col-md-3"><label class="form-label small">Extraordinaria (EXT): cuotas</label><input name="ext_installments" type="number" min="1" max="24" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label small">Extraordinaria (EXT): reparto</label><select name="ext_mode" class="form-select"><option value="coefficient">Por coeficiente de copropiedad</option><option value="equal">Partes iguales</option></select></div>
+                <div class="col-md-6"><label class="form-label small">Nota al pie de la cuenta de cobro</label><input name="note" class="form-control" maxlength="600" placeholder="Ej. Descuento del 5% por pronto pago antes del día 5"></div>
+              </div>
+              <p class="small text-body-secondary mt-3 mb-3">La cuenta bancaria y la forma de pago van en cada conjunto (Conjuntos → editar). La tasa de interés no debe superar la máxima legal vigente.</p>
+              <button class="btn btn-primary manager" type="submit">Guardar configuración</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
       <div class="col-12">
         <div class="card">
           <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-people me-2 text-primary"></i>Equipo</span>
@@ -63,6 +96,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="/admin/assets/app.js"></script>
+  <script src="/admin/assets/cuenta-cobro.js"></script>
   <script>
     (async () => {
       if (!(await App.init('ajustes'))) return;
@@ -136,7 +170,27 @@
         } catch (err) { App.fail(err); }
       });
 
+      async function loadBilling() {
+        const { billing } = await App.api('/billing');
+        App.fillForm($('billForm'), billing);
+        if (!manage) $('billForm').querySelectorAll('input,select').forEach((i) => (i.disabled = true));
+      }
+      App.onSubmit($('billForm'), async (d) => { await App.api('/billing', { method: 'PUT', body: d }); App.toast('Configuración de cartera guardada'); });
+      // Vista previa con la unidad de mayor saldo, en el formato elegido (sin guardar).
+      $('preview').addEventListener('click', async () => {
+        try {
+          const { items } = await App.api('/charges/by-unit' + App.qs());
+          if (!items.length) return App.toast('No hay unidades con saldo para la vista previa', 'warning');
+          const top = items.sort((a, b) => b.total - a.total)[0];
+          const format = App.formData($('billForm')).format;
+          if (format === 'letter_series') CuentaCobro.open({ property: top.property_id, format });
+          else CuentaCobro.open({ unit: top.unit_id, format });
+        } catch (err) { App.fail(err); }
+      });
+
       loadBusiness().catch(App.fail);
+      loadBilling().catch(App.fail);
+      if (location.hash === '#cartera') setTimeout(() => $('cartera').scrollIntoView({ behavior: 'smooth' }), 300);
       loadTeam().catch(App.fail);
     })();
   </script>

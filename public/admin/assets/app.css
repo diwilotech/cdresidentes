@@ -284,3 +284,27 @@ body > main { view-transition-name: page; }
 #cdr-progress.on { opacity: 1; transition: opacity .1s; animation: cdr-progress 2.2s cubic-bezier(.1,.7,.2,1) forwards; }
 @keyframes cdr-progress { from { transform: scaleX(.04); } to { transform: scaleX(.9); } }
 @media (prefers-reduced-motion: reduce) { #cdr-progress.on { animation: none; transform: scaleX(.6); } }
+
+/* ---------- DataTables ---------- */
+div.dt-container { padding: .75rem 1rem; }
+div.dt-container .dt-buttons .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .55rem; --bs-btn-font-size: .8rem; background: var(--cdr-surface); color: var(--cdr-ink); border-color: var(--cdr-line); font-weight: 600; }
+div.dt-container .dt-buttons .btn:hover { background: var(--cdr-surface-2); }
+div.dt-container .dt-search input { min-width: 14rem; }
+div.dt-container div.dt-layout-row { margin: .4rem 0; }
+table.dataTable > tfoot > tr > th { font-family: var(--cdr-mono); font-weight: 700; border-top: 2px solid var(--cdr-line); background: var(--cdr-surface-2); }
+table.dataTable td.num, table.dataTable th.num { text-align: end; }
+table.dataTable > tbody > tr[id] { cursor: pointer; }
+.table-clickable-off table.dataTable > tbody > tr[id] { cursor: default; }
+@media (max-width: 575.98px) {
+  div.dt-container { padding: .5rem; }
+  div.dt-container .dt-search input { min-width: 0; width: 100%; }
+  div.dt-container .dt-layout-row { flex-direction: column; align-items: stretch; gap: .4rem; }
+}
+.stack-cell { line-height: 1.35; white-space: nowrap; }
+.stack-cell .k { font: 700 .72rem var(--cdr-mono); margin-right: .25rem; }
+.stack-cell .zero { color: var(--cdr-muted); }
+.total-pill { display: inline-block; padding: .2rem .55rem; border-radius: .45rem; font: 700 .85rem var(--cdr-mono); background: rgba(var(--bs-warning-rgb), .15); color: var(--bs-warning); border: 1px solid rgba(var(--bs-warning-rgb), .35); }
+.total-pill.ok { background: rgba(var(--bs-success-rgb), .12); color: var(--bs-success); border-color: rgba(var(--bs-success-rgb), .3); }
+.total-pill.bad { background: rgba(var(--bs-danger-rgb), .12); color: var(--bs-danger); border-color: rgba(var(--bs-danger-rgb), .3); }
+/* Títulos largos en dos líneas (como "Retroactivos (RTC) / Extra (EXT)") para que quepan las columnas. */
+table.dataTable > thead > tr > th { white-space: normal; max-width: 10rem; line-height: 1.35; vertical-align: bottom; }

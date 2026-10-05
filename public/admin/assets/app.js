@@ -412,6 +412,131 @@ const App = (() => {
     return fill().catch(fail);
   }
 
+  // ---------- librerías bajo demanda ----------
+
+  const CDN = 'https://cdn.jsdelivr.net/npm/';
+  const loaded = {};
+  function loadScript(src) {
+    return (loaded[src] ||= new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src.startsWith('http') ? src : CDN + src;
+      s.onload = resolve;
+      s.onerror = () => { delete loaded[src]; reject(new Error('No se pudo cargar una librería. Revisa tu conexión.')); };
+      document.head.appendChild(s);
+    }));
+  }
+  function loadCss(href) {
+    if (document.querySelector(`link[data-lib="${href}"]`)) return;
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = CDN + href; l.dataset.lib = href;
+    document.head.appendChild(l);
+  }
+  // pdfmake (PDF de cuentas de cobro y exportación de tablas): solo cuando se necesita.
+  const loadPdf = async () => { await loadScript('pdfmake@0.2.23/build/pdfmake.min.js'); await loadScript('pdfmake@0.2.23/build/vfs_fonts.js'); };
+  let dtReady;
+  function loadDataTables() {
+    return (dtReady ||= (async () => {
+      ['datatables.net-bs5@2.3.8/css/dataTables.bootstrap5.min.css', 'datatables.net-buttons-bs5@3.2.6/css/buttons.bootstrap5.min.css',
+        'datatables.net-responsive-bs5@3.0.8/css/responsive.bootstrap5.min.css'].forEach(loadCss);
+      for (const src of ['jquery@3.7.1/dist/jquery.min.js', 'datatables.net@2.3.8/js/dataTables.min.js', 'datatables.net-bs5@2.3.8/js/dataTables.bootstrap5.min.js',
+        'datatables.net-buttons@3.2.6/js/dataTables.buttons.min.js', 'datatables.net-buttons-bs5@3.2.6/js/buttons.bootstrap5.min.js',
+        'datatables.net-buttons@3.2.6/js/buttons.html5.min.js', 'datatables.net-buttons@3.2.6/js/buttons.print.min.js', 'jszip@3.10.1/dist/jszip.min.js',
+        'datatables.net-responsive@3.0.8/js/dataTables.responsive.min.js', 'datatables.net-responsive-bs5@3.0.8/js/responsive.bootstrap5.min.js']) await loadScript(src);
+    })());
+  }
+
+  const DT_LANG = {
+    decimal: ',', thousands: '.', emptyTable: 'Sin registros', info: '_START_ a _END_ de _TOTAL_', infoEmpty: '0 registros',
+    infoFiltered: '(de _MAX_)', lengthMenu: '_MENU_ por página', loadingRecords: 'Cargando…', search: '', searchPlaceholder: 'Buscar…',
+    zeroRecords: 'Sin resultados', paginate: { first: '«', last: '»', next: '›', previous: '‹' },
+    buttons: { copy: 'Copiar', copyTitle: 'Copiado', copySuccess: { _: '%d filas copiadas', 1: '1 fila copiada' }, print: 'Imprimir' },
+  };
+  const plain = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent.replace(/\s+/g, ' ').trim(); };
+
+  // Tabla con búsqueda, orden, paginación, columnas adaptables al celular y descarga (Copiar, Excel, CSV, PDF, Imprimir).
+  //   columns: [{ title, html(row) (lo que se ve), value(row) (orden/exportación; números sin formato),
+  //               sum: true (total en el pie), money: true, noExport, exportOnly (oculta en pantalla), className, orderable, priority }]
+  //   Se puede llamar de nuevo con el mismo <table> para reemplazar los datos.
+  async function dataTable(table, { columns, data, order = [], title = document.title, pageLength = 25, rowId = 'id', onDraw } = {}) {
+    await loadDataTables();
+    const $ = window.jQuery;
+    if (table._dt) {
+      table._dt.clear().rows.add(data).draw(false);
+      return table._dt;
+    }
+    if (columns.some((c) => c.sum)) table.insertAdjacentHTML('beforeend', `<tfoot><tr>${columns.map(() => '<th></th>').join('')}</tr></tfoot>`);
+    const exportCols = columns.map((c, i) => (c.noExport ? -1 : i)).filter((i) => i >= 0);
+    const fileTitle = `${title} ${todayLocal()}`;
+    const ex = { columns: exportCols, orthogonal: 'export', footer: true };
+    const dt = new DataTable(table, {
+      data,
+      rowId,
+      order,
+      pageLength,
+      lengthMenu: [10, 25, 50, 100, { label: 'Todos', value: -1 }],
+      language: { ...DT_LANG, lengthMenu: '_MENU_' },
+      autoWidth: false,
+      responsive: true,
+      layout: {
+        topStart: { buttons: [
+          { extend: 'copy', text: '<i class="bi bi-clipboard"></i>', titleAttr: 'Copiar', exportOptions: ex, title: fileTitle },
+          { extend: 'excel', text: '<i class="bi bi-file-earmark-excel"></i> Excel', exportOptions: ex, title: fileTitle, filename: fileTitle },
+          { extend: 'csv', text: '<i class="bi bi-filetype-csv"></i> CSV', exportOptions: ex, filename: fileTitle },
+          { extend: 'pdfHtml5', text: '<i class="bi bi-file-earmark-pdf"></i> PDF', exportOptions: ex, title: fileTitle, filename: fileTitle,
+            orientation: exportCols.length > 6 ? 'landscape' : 'portrait', pageSize: 'LETTER',
+            customize: (doc) => { doc.defaultStyle.fontSize = 8; doc.styles.tableHeader.fillColor = '#047857'; },
+            // pdfmake se carga al usarlo por primera vez (sin esto DataTables oculta el botón).
+            available: () => true,
+            action: async function (e, dtApi, node, config, cb) {
+              try { await loadPdf(); } catch (err) { fail(err); return; }
+              DataTable.ext.buttons.pdfHtml5.action.call(this, e, dtApi, node, config, cb);
+            } },
+          { extend: 'print', text: '<i class="bi bi-printer"></i>', titleAttr: 'Imprimir', exportOptions: ex, title: fileTitle },
+        ] },
+        topEnd: ['pageLength', 'search'],
+        bottomStart: 'info',
+        bottomEnd: 'paging',
+      },
+      columns: columns.map((c, i) => ({
+        title: c.title,
+        data: null,
+        className: [c.className, c.money || c.sum ? 'num' : ''].filter(Boolean).join(' '),
+        orderable: c.orderable !== false,
+        visible: !c.exportOnly,
+        responsivePriority: c.priority ?? (i === 0 ? 1 : i === columns.length - 1 ? 2 : 10 + i),
+        render: (_, type, row) => {
+          if (type === 'display') return c.html ? c.html(row) : esc(c.value ? c.value(row) : '');
+          const v = c.value ? c.value(row) : plain(c.html ? c.html(row) : '');
+          return v ?? '';
+        },
+      })),
+      footerCallback() {
+        if (!columns.some((c) => c.sum)) return;
+        const api = this.api();
+        const rows = api.rows({ search: 'applied' }).data().toArray();
+        columns.forEach((c, i) => {
+          const cell = api.column(i).footer();
+          if (!cell) return;
+          if (i === 0) cell.textContent = `Total (${rows.length})`;
+          else if (c.sum) cell.textContent = (c.money === false ? fmtNum : money)(rows.reduce((s, r) => s + (Number(c.value(r)) || 0), 0), 0);
+          else cell.textContent = '';
+        });
+      },
+      drawCallback() { onDraw?.(this.api()); },
+    });
+    table._dt = dt;
+    return dt;
+  }
+
+  // Clic en una fila (sin abrir cuando se toca el botón de expandir del modo celular ni un botón/enlace).
+  function onRowClick(table, fn) {
+    table.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, a, input, .dtr-control, tr.child')) return;
+      const tr = ev.target.closest('tbody tr[id]');
+      if (tr) fn(tr.id);
+    });
+  }
+
   // ---------- navegación ----------
 
   const NAV = [
@@ -639,7 +764,7 @@ const App = (() => {
   const canManage = () => ['owner', 'admin'].includes(me?.session?.role);
 
   return {
-    api, qs, init, link, go, clearShell, toast, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
+    api, qs, init, link, go, clearShell, toast, dataTable, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
     onSubmit, formData, fillForm, confirmAction, param, badge, canManage,
     fmtDate, fmtTime, fmtDateTime, fmtMonth, fmtNum, money, moneyShort, unitLabel, initials, daysSince, todayLocal, addDays,
     currentProperty, setProperty, onProperty, propertyOptions, propertyName,

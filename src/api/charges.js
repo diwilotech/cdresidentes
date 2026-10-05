@@ -53,7 +53,7 @@ export function routes(r) {
       `SELECT ch.*, u.tower, u.number, u.owner_name, u.property_id, p.name AS property_name
          FROM charges ch JOIN units u ON u.id = ch.unit_id JOIN properties p ON p.id = u.property_id
         WHERE ch.business_id = ?${f}
-        ORDER BY ch.paid_at IS NOT NULL, ch.due_date DESC LIMIT 500`,
+        ORDER BY ch.paid_at IS NOT NULL, ch.due_date DESC LIMIT 3000`,
       c.businessId, ...a,
     );
     return json({ items, concepts: CONCEPTS });
@@ -136,28 +136,7 @@ export function routes(r) {
     return json({ ok: true, created, skipped: units.length - created });
   });
 
-  // Intereses de mora: rate % mensual sobre el saldo vencido de cada unidad.
-  r.post('/api/admin/charges/interest', 'manager', async (c) => {
-    const body = await readJson(c.req);
-    const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
-    const rate = num(body.rate, { min: 0.01, max: 10, label: 'Tasa' });
-    if (!rate) throw new HttpError(400, 'Tasa es obligatoria');
-    const period = FIELDS.period(body.period) || today().slice(0, 7);
-    const t = today();
-    const db = tenantDb(c);
-    const rows = await db.all(
-      `SELECT ch.unit_id, SUM(ch.amount) AS overdue FROM charges ch JOIN units u ON u.id = ch.unit_id
-        WHERE ch.business_id = ? AND u.property_id = ? AND ch.paid_at IS NULL AND ch.due_date < ? AND ch.concept <> 'int'
-        GROUP BY ch.unit_id`,
-      c.businessId, property.id, t,
-    );
-    const stmts = rows.map((x) => ({ ...x, v: Math.round((x.overdue * rate) / 100) })).filter((x) => x.v > 0).map((x) => db.prepare(
-      `INSERT INTO charges (id, business_id, unit_id, concept, period, description, amount, due_date) VALUES (?, ?, ?, 'int', ?, ?, ?, ?)`,
-      uuid(), c.businessId, x.unit_id, period, `Intereses ${rate}% ${period}`, x.v, t,
-    ));
-    if (stmts.length) await db.batch(stmts);
-    return json({ ok: true, created: stmts.length });
-  });
+  // Intereses, cobro jurídico, retroactivo y cuota extraordinaria: api/billing.js
 
   r.post('/api/admin/charges/:id/pay', 'tenant', async (c) => {
     const body = await readJson(c.req);

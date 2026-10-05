@@ -41,16 +41,25 @@ migrations/           esquema D1
 | Inicio | KPIs (unidades, habitantes, cartera vencida, % mora, PQRS, visitas), insight de IA, atrasos más altos, portería, reservas, comunicados |
 | Conjuntos | Sedes de la administración: NIT, dirección, torres, logo (R2) y documentos (actas, reglamento) |
 | Propietarios | Directorio de unidades con propietario/arrendatario, área, coeficiente; filtros por torre, tipo y mora; desglose de cobros; WhatsApp y **cobro con IA** |
-| Cartera | Cobros por concepto (administración, retroactivo, parqueadero, extraordinaria, jurídico, intereses), pagos, antigüedad 0‑30/31‑60/61‑90/90+, recaudo de 12 meses, **cuotas del mes por coeficiente, área o valor fijo** e intereses de mora |
+| Cartera | **Estado de cuenta por unidad** (cuota de administración con *Items cobro*, RTC/EXT, JUR/INT, parqueadero/otros, total adeudado y fila de totales) y **Movimientos**. Pagos por item o totales, antigüedad 0‑30/31‑60/61‑90/90+, recaudo de 12 meses. Menú **Liquidar**: cuotas del mes (coeficiente, área o fijo), intereses de mora, cobro jurídico, retroactivo y cuota extraordinaria en N cuotas. **Cuenta de cobro PDF** por unidad o de todo el conjunto |
 | Portería | Mudanzas, visitas, mantenimiento, domicilios y alarmas con aprobación y evidencias |
 | PQRS | Peticiones, quejas, reclamos y sugerencias por categoría y prioridad, tiempo promedio de respuesta, **respuesta con IA** |
 | Reservas | Zonas comunes con tarifa por evento/hora/día, calendario mensual, choque de horarios, aprobación y pago |
 | Mascotas | Censo con vacunas, razas potencialmente peligrosas, foto y carné (R2) |
 | Comunicados | Circulares con plantillas y **redacción con IA**; envío a todos, solo propietarios o solo morosos por WhatsApp y correo (BCC) |
 | Diwilo AI | Chat con historial por usuario. Cada respuesta se arma con un resumen en vivo (cartera y deudores, PQRS, portería, reservas, mascotas, comunicados) del negocio o del conjunto activo. Los borradores entre `---INICIO---`/`---FIN---` se pueden publicar como comunicado o enviar por WhatsApp |
-| Ajustes | Datos y logo de la administración, instancia de WhatsApp, equipo con links de invitación, pruebas de WhatsApp y correo |
+| Ajustes | Datos y logo de la administración, instancia de WhatsApp, **Cartera y cuenta de cobro** (formato del PDF, día de vencimiento, % de interés y su base, % y días del cobro jurídico, % de retroactivo, reparto y cuotas de extraordinarias, nota al pie), equipo con links de invitación, pruebas de WhatsApp y correo |
 
 El selector **Conjunto** de la barra superior filtra todas las páginas (se recuerda en el navegador).
+
+**Tablas:** todas las listas usan DataTables (búsqueda, orden, paginación, columnas adaptables en celular) con descarga en
+Copiar, Excel, CSV, PDF e Imprimir; las columnas de montos llevan total en el pie y la descarga trae los valores como números
+(en cartera, una columna por concepto). Las librerías se cargan solo en las páginas con tablas, y pdfmake solo al pedir un PDF.
+
+**Cuenta de cobro (PDF):** se arma en el navegador con pdfmake ([public/admin/assets/cuenta-cobro.js](public/admin/assets/cuenta-cobro.js))
+con los siete conceptos, periodos, estado (vencido / por vencer), total a pagar, forma de pago del conjunto y nota de Ajustes.
+Formatos: **media carta** (una por hoja), **carta original y copia** (propietario y administración, con línea de corte) o
+**carta en serie** (dos unidades por hoja, para imprimir todo el conjunto).
 
 ## Plataforma Diwilo
 
