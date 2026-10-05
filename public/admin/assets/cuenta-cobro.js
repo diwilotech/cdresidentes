@@ -1,4 +1,4 @@
-// Cuenta de cobro en PDF (pdfmake, en el navegador) con todos los conceptos de la cartera.
+// Cuenta de cobro en PDF (pdfmake, en el navegador) con los cortes por mes de cada concepto de la cartera.
 // Formatos (Ajustes → Cartera y cuenta de cobro):
 //   half          media carta (21,6 × 14 cm), una cuenta por hoja
 //   letter_copy   carta: la misma cuenta dos veces, ORIGINAL (propietario) y COPIA (administración), con línea de corte
@@ -19,14 +19,6 @@ const CuentaCobro = (() => {
   const fdate = (iso) => (iso ? `${+iso.slice(8, 10)} ${MESES[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}` : '—');
   const fper = (ym) => `${MESES[+ym.slice(5, 7) - 1]} ${ym.slice(0, 4)}`;
 
-  // Periodos de un concepto: "jul 2026 – oct 2026 (4)" o la lista si son pocos.
-  function periods(items) {
-    const ps = [...new Set(items.map((i) => i.period || i.due_date.slice(0, 7)))].sort();
-    if (!ps.length) return '';
-    if (ps.length <= 2) return ps.map(fper).join(', ');
-    return `${fper(ps[0])} – ${fper(ps.at(-1))} (${ps.length})`;
-  }
-
   // Imagen a dataURL (pdfmake solo acepta PNG y JPG).
   const images = {};
   async function dataUrl(url) {
@@ -40,23 +32,43 @@ const CuentaCobro = (() => {
     return images[url];
   }
 
+  // Cortes por mes: una fila por mes de vencimiento y una columna por concepto, con lo pendiente de cada corte.
+  // Más de 7 meses: los más antiguos se agrupan en "Anteriores" para que quepa en media carta.
+  function cutsTable(data, st) {
+    const t = data.issued;
+    const num = (n) => (n ? Math.round(n).toLocaleString('es-CO') : '—');
+    let groups = [...new Set(st.items.map((i) => i.due_date.slice(0, 7)))].sort().map((m) => ({ label: fper(m), keys: [m] }));
+    if (groups.length > 7) {
+      const old = groups.slice(0, groups.length - 6);
+      groups = [{ label: `Anteriores (${old.length})`, keys: old.flatMap((g) => g.keys) }, ...groups.slice(-6)];
+    }
+    const sum = (keys, k) => st.items.filter((i) => keys.includes(i.due_date.slice(0, 7)) && (!k || i.concept === k)).reduce((s, i) => s + i.amount, 0);
+    const overdue = (keys) => st.items.some((i) => keys.includes(i.due_date.slice(0, 7)) && i.due_date < t);
+    const body = [
+      [{ text: 'Corte (mes)', style: 'th' }, ...ORDER.map((k) => ({ text: SHORT[k], style: 'th', alignment: 'right' })), { text: 'Total', style: 'th', alignment: 'right' }],
+      ...(groups.length ? groups.map((g) => [
+        { text: [g.label, overdue(g.keys) ? { text: '  vencido', color: '#B91C1C', fontSize: 6.5 } : { text: '  por vencer', color: MUTED, fontSize: 6.5 }] },
+        ...ORDER.map((k) => { const v = sum(g.keys, k); return { text: num(v), alignment: 'right', color: v ? INK : '#9CA3AF' }; }),
+        { text: num(sum(g.keys)), alignment: 'right', bold: true },
+      ]) : [[{ text: 'Sin saldos pendientes: paz y salvo', colSpan: ORDER.length + 2, color: ACCENT, alignment: 'center' }, ...ORDER.map(() => ({})), {}]]),
+      [{ text: 'TOTAL', bold: true, fillColor: '#ECFDF5' }, ...ORDER.map((k) => ({ text: num(st.concepts[k] || 0), alignment: 'right', bold: true, fillColor: '#ECFDF5' })),
+        { text: num(st.total), alignment: 'right', bold: true, fillColor: '#ECFDF5' }],
+      [{ text: [{ text: 'TOTAL A PAGAR', bold: true }, { text: `   Vencido ${money(st.overdue)}  ·  Por vencer ${money(st.total - st.overdue)}`, color: MUTED, fontSize: 7 }], colSpan: ORDER.length + 1 },
+        ...ORDER.map(() => ({})), { text: money(st.total), bold: true, fontSize: 11, alignment: 'right', color: st.total ? INK : ACCENT }],
+    ];
+    return {
+      table: { headerRows: 1, widths: [84, ...ORDER.map(() => '*'), 66], body },
+      layout: { hLineColor: () => LINE, vLineWidth: () => 0, hLineWidth: (i, node) => (i === 1 || i >= node.table.body.length - 2 ? 1 : 0.4), paddingTop: () => 2.2, paddingBottom: () => 2.2, paddingLeft: () => 3, paddingRight: () => 3 },
+      fontSize: 7.5,
+    };
+  }
+
   // Una cuenta de cobro: cabe en media carta (alto útil 396 - 2M).
   function block(data, st, label, logo) {
     const p = st.property || {};
     const u = st.unit;
     const t = data.issued;
     const width = W - 2 * M;
-    const rows = ORDER.map((k) => {
-      const items = st.items.filter((i) => i.concept === k);
-      const v = st.concepts[k] || 0;
-      const c = v ? INK : MUTED;
-      return [
-        { text: [{ text: SHORT[k] + '  ', bold: true, color: ACCENT, fontSize: 7 }, { text: data.concepts[k], color: c }] },
-        { text: periods(items), color: MUTED, fontSize: 7.5 },
-        { text: items.some((i) => i.due_date < t) ? 'Vencido' : items.length ? 'Por vencer' : '', color: items.some((i) => i.due_date < t) ? '#B91C1C' : MUTED, fontSize: 7.5 },
-        { text: money(v), alignment: 'right', color: c, bold: !!v },
-      ];
-    });
     return {
       unbreakable: true,
       stack: [
@@ -103,20 +115,8 @@ const CuentaCobro = (() => {
           layout: { hLineColor: () => LINE, vLineWidth: () => 0, paddingTop: () => 3, paddingBottom: () => 3 },
           fontSize: 8,
         },
-        {
-          table: {
-            headerRows: 1,
-            widths: ['*', 120, 52, 80],
-            body: [
-              [{ text: 'Concepto', style: 'th' }, { text: 'Periodos', style: 'th' }, { text: 'Estado', style: 'th' }, { text: 'Valor', style: 'th', alignment: 'right' }],
-              ...rows,
-              [{ text: [{ text: 'TOTAL A PAGAR', bold: true }, { text: `   Vencido ${money(st.overdue)}  ·  Por vencer ${money(st.total - st.overdue)}`, color: MUTED, fontSize: 7 }], colSpan: 3, fillColor: '#ECFDF5' }, {}, {},
-                { text: money(st.total), bold: true, fontSize: 11, alignment: 'right', color: st.total ? INK : ACCENT, fillColor: '#ECFDF5' }],
-            ],
-          },
-          layout: { hLineColor: () => LINE, vLineWidth: () => 0, hLineWidth: (i, node) => (i === 1 || i === node.table.body.length - 1 ? 1 : 0.4), paddingTop: () => 2.2, paddingBottom: () => 2.2 },
-          fontSize: 8,
-        },
+        cutsTable(data, st),
+        { text: ORDER.map((k) => `${SHORT[k]} ${data.concepts[k]}`).join('  ·  '), fontSize: 6, color: MUTED, margin: [0, 2, 0, 0] },
         {
           margin: [0, 6, 0, 0],
           columns: [

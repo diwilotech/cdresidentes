@@ -120,6 +120,51 @@ export function routes(r) {
     });
   });
 
+  // ---------- cortes mensuales ----------
+  // Cada mes (corte = último día del mes): saldo anterior + cargos del mes por concepto − pagos del mes = saldo al corte.
+  // Un cargo cuenta en el mes de su vencimiento; un pago, en el mes en que se pagó (o en el del vencimiento si se pagó por adelantado),
+  // así la cuenta siempre cuadra. `pending` = lo que aún se debe de los cargos de ese mes.
+  // ?unit=<id> una unidad · ?property=<id> un conjunto · sin filtro: toda la administración
+  r.get('/api/admin/charges/cuts', 'tenant', async (c) => {
+    const sp = c.url.searchParams;
+    const args = [c.businessId];
+    let where = '';
+    if (sp.get('unit')) { where += ' AND ch.unit_id = ?'; args.push(sp.get('unit')); }
+    if (sp.get('property')) { where += ' AND u.property_id = ?'; args.push(sp.get('property')); }
+    const rows = await tenantDb(c).all(
+      `SELECT ch.concept, ch.amount, ch.due_date, ch.paid_at FROM charges ch JOIN units u ON u.id = ch.unit_id
+        WHERE ch.business_id = ?${where}`,
+      ...args,
+    );
+    const now = today().slice(0, 7);
+    if (!rows.length) return json({ months: [], concepts: CONCEPTS });
+    const zero = () => Object.fromEntries(Object.keys(CONCEPTS).map((k) => [k, 0]));
+    const byMonth = {};
+    const month = (m) => (byMonth[m] ||= { charges: zero(), pending: zero(), paid: 0 });
+    for (const ch of rows) {
+      const due = ch.due_date.slice(0, 7);
+      month(due).charges[ch.concept] += ch.amount;
+      if (ch.paid_at) {
+        const pm = ch.paid_at.slice(0, 7);
+        month(pm > due ? pm : due).paid += ch.amount;
+      } else month(due).pending[ch.concept] += ch.amount;
+    }
+    const keys = Object.keys(byMonth).sort();
+    const first = keys[0];
+    const last = keys.at(-1) > now ? keys.at(-1) : now;
+    const out = [];
+    let balance = 0;
+    for (let m = first; m <= last; m = addMonths(m, 1)) {
+      const x = month(m);
+      const charged = Object.values(x.charges).reduce((a, b) => a + b, 0);
+      const opening = balance;
+      balance = opening + charged - x.paid;
+      out.push({ period: m, opening, charges: x.charges, charged, paid: x.paid, closing: balance,
+        pending: x.pending, pending_total: Object.values(x.pending).reduce((a, b) => a + b, 0), future: m > now });
+    }
+    return json({ months: out.reverse().slice(0, 36), concepts: CONCEPTS });
+  });
+
   // ---------- cuentas de cobro (datos para el PDF; el PDF se arma en el navegador) ----------
   // ?unit=<id> una unidad · ?property=<id> todo el conjunto · ?all=1 incluye unidades sin saldo
 
