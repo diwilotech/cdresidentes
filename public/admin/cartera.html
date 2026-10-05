@@ -138,21 +138,34 @@
       // ---------- estado de cuenta por unidad (como la cuenta de cobro, con totales) ----------
       const C = (r, k) => r.concepts[k] || 0;
       const line = (cls, k, v) => `<div><span class="k ${cls}">${k}:</span><span class="${v ? '' : 'zero'}">${money(v)}</span></div>`;
-      const PAIRS = [[2, ['k-rtc', 'RTC', 'rtc'], ['k-ext', 'EXT', 'ext']], [3, ['k-jur', 'JUR', 'jur'], ['k-int', 'INT', 'int']], [4, ['k-par', 'PAR', 'parking'], ['k-otr', 'OTR', 'other']]];
-      const pairCol = (title, [, a, b], priority) => ({
-        title, className: 'stack-cell', priority, noExport: true, value: (r) => C(r, a[2]) + C(r, b[2]),
-        html: (r) => line(a[0], a[1], C(r, a[2])) + line(b[0], b[1], C(r, b[2])),
-      });
+      // Conceptos de dos en dos, uno debajo del otro (como la cuenta de cobro). Se usa en Estado de cuenta y en Cortes.
+      const PAIRS = [
+        ['Retroactivos (RTC) / Extra (EXT)', ['k-rtc', 'RTC', 'rtc'], ['k-ext', 'EXT', 'ext']],
+        ['Jurídico (JUR) / Interés (INT)', ['k-jur', 'JUR', 'jur'], ['k-int', 'INT', 'int']],
+        ['Parqueadero / Otros', ['k-par', 'PAR', 'parking'], ['k-otr', 'OTR', 'other']],
+      ];
+      // get(row, concepto) -> valor. Devuelve: cuota de administración, las 3 columnas apiladas y, solo para la descarga, un concepto por columna.
+      const conceptCols = (get, adminHtml) => [
+        { title: 'Cuota administración', sum: true, priority: 4, value: (r) => get(r, 'admin'), html: adminHtml || ((r) => `<span class="mono fw-semibold ${get(r, 'admin') ? '' : 'text-body-secondary'}">${money(get(r, 'admin'))}</span>`) },
+        ...PAIRS.map(([title, a, b], i) => ({
+          title, className: 'stack-cell', priority: 5 + i, noExport: true, value: (r) => get(r, a[2]) + get(r, b[2]),
+          html: (r) => line(a[0], a[1], get(r, a[2])) + line(b[0], b[1], get(r, b[2])),
+        })),
+        ...['rtc', 'ext', 'jur', 'int', 'parking', 'other'].map((k) => ({ title: App.CONCEPTS[k], exportOnly: true, sum: true, value: (r) => get(r, k) })),
+      ];
+      // Pie de las columnas apiladas (adminCol = índice de la columna "Cuota administración").
+      const pairFooterFor = (get, adminCol) => (api) => {
+        const rows = api.rows({ search: 'applied' }).data().toArray();
+        const s = (k) => rows.reduce((t, r) => t + (get(r, k) || 0), 0);
+        PAIRS.forEach(([, a, b], i) => {
+          const f = api.column(adminCol + 1 + i).footer();
+          if (f) f.innerHTML = `<div class="stack-cell">${line(a[0], a[1], s(a[2]))}${line(b[0], b[1], s(b[2]))}</div>`;
+        });
+      };
       const UNIT_COLS = [
         { title: 'Unidad', html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:11rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>`,
           value: (r) => `${r.property_name} · ${unitLabel(r)} · ${r.owner_name || ''}` },
-        { title: 'Cuota administración', sum: true, priority: 4, value: (r) => C(r, 'admin'),
-          html: (r) => `<div class="mono fw-semibold">${money(C(r, 'admin'))}</div><button class="btn btn-sm btn-outline-success py-0 px-2 mt-1 text-nowrap" data-items="${esc(r.unit_id)}"><i class="bi bi-receipt me-1"></i>Items cobro</button>` },
-        pairCol('Retroactivos (RTC) / Extra (EXT)', PAIRS[0], 5),
-        pairCol('Jurídico (JUR) / Interés (INT)', PAIRS[1], 6),
-        pairCol('Parqueadero / Otros', PAIRS[2], 7),
-        // Solo en la descarga: un concepto por columna.
-        ...['rtc', 'ext', 'jur', 'int', 'parking', 'other'].map((k) => ({ title: App.CONCEPTS[k], exportOnly: true, sum: true, value: (r) => C(r, k) })),
+        ...conceptCols(C, (r) => `<div class="mono fw-semibold">${money(C(r, 'admin'))}</div><button class="btn btn-sm btn-outline-success py-0 px-2 mt-1 text-nowrap" data-items="${esc(r.unit_id)}"><i class="bi bi-receipt me-1"></i>Items cobro</button>`),
         { title: 'Total adeudado', sum: true, priority: 2, value: (r) => r.total,
           html: (r) => `<span class="total-pill ${!r.total ? 'ok' : r.overdue ? 'bad' : ''}">${money(r.total)}</span>${r.oldest_due ? `<div class="small text-danger mt-1 text-nowrap">${App.daysSince(r.oldest_due)} días de mora</div>` : ''}` },
         { title: 'Vencido', exportOnly: true, sum: true, value: (r) => r.overdue },
@@ -162,15 +175,7 @@
             ${r.total ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(r.unit_id)}" title="Cobro con IA"><i class="bi bi-stars"></i><span class="d-none d-xxl-inline"> Cobro AI</span></button>
             <button class="btn btn-sm btn-outline-success" data-payall="${esc(r.unit_id)}" title="Registrar pago"><i class="bi bi-cash"></i></button>` : ''}` },
       ];
-      // Pie de las columnas dobles: RTC / EXT, JUR / INT, PAR / OTR.
-      function pairFooter(api) {
-        const rows = api.rows({ search: 'applied' }).data().toArray();
-        const s = (k) => rows.reduce((t, r) => t + C(r, k), 0);
-        for (const [i, a, b] of PAIRS) {
-          const f = api.column(i).footer();
-          if (f) f.innerHTML = `<div class="stack-cell">${line(a[0], a[1], s(a[2]))}${line(b[0], b[1], s(b[2]))}</div>`;
-        }
-      }
+      const pairFooter = pairFooterFor(C, 1);
 
       async function loadUnits() {
         try {
@@ -212,25 +217,44 @@
       const CK = ['admin', 'rtc', 'ext', 'parking', 'jur', 'int', 'other'];
       const SHORT = { admin: 'ADM', rtc: 'RTC', ext: 'EXT', parking: 'PAR', jur: 'JUR', int: 'INT', other: 'OTR' };
       const cut = (v, cls = '') => (v ? `<span class="${cls}">${money(v)}</span>` : '<span class="text-body-secondary">—</span>');
+      const G = (r, k) => r.charges[k] || 0;
+      const conceptFooter = pairFooterFor(G, 1);
+      const cutFooter = (api) => {
+        conceptFooter(api);
+        const rows = api.rows({ search: 'applied' }).data().toArray();
+        const s = (f) => rows.reduce((t, r) => t + r[f], 0);
+        // En el historial no se suma el saldo anterior (cada mes arrastra el del mes previo).
+        const isUnits = api.table().node().id === 'cutUnitsTable';
+        const f11 = api.column(11).footer();
+        if (f11) f11.innerHTML = `<div class="stack-cell">${isUnits ? `<div><span class="k">ANT:</span>${money(s('opening'))}</div>` : ''}<div><span class="k">+CARGOS:</span>${money(s('charged'))}</div><div><span class="k text-success">−PAGOS:</span>${money(s('paid'))}</div></div>`;
+        const f15 = api.column(15).footer();
+        if (f15 && s('pending_total')) f15.insertAdjacentHTML('beforeend', `<div class="small text-danger">pendiente ${money(s('pending_total'))}</div>`);
+      };
       const CUT_COLS = [
         { title: 'Corte', value: (m) => m.period, html: (m) => `<div class="fw-semibold text-capitalize">${App.fmtMonth(m.period)}</div><div class="small text-body-secondary">${m.future ? 'por facturar' : 'corte ' + App.fmtDate(new Date(Date.UTC(+m.period.slice(0, 4), +m.period.slice(5), 0)).toISOString().slice(0, 10))}</div>` },
-        { title: 'Saldo anterior', money: true, priority: 6, value: (m) => m.opening, html: (m) => cut(m.opening) },
-        ...CK.map((k) => ({ title: `${App.CONCEPTS[k]} (${SHORT[k]})`, sum: true, value: (m) => m.charges[k], html: (m) => cut(m.charges[k]), priority: 20 })),
-        { title: 'Cargos del mes', sum: true, priority: 4, value: (m) => m.charged, html: (m) => `<span class="fw-semibold">${money(m.charged)}</span>` },
-        { title: 'Pagos', sum: true, priority: 3, value: (m) => m.paid, html: (m) => cut(m.paid, 'text-success fw-semibold') },
-        { title: 'Saldo al corte', money: true, priority: 2, value: (m) => m.closing, html: (m) => `<span class="total-pill ${m.closing > 0 ? (m.future ? '' : 'bad') : 'ok'}">${money(m.closing)}</span>` },
-        { title: 'Pendiente de este corte', sum: true, priority: 5, value: (m) => m.pending_total, html: (m) => cut(m.pending_total, 'text-danger') },
+        ...conceptCols(G),
+        { title: 'Anterior / Cargos / Pagos', className: 'stack-cell', noExport: true, priority: 4, value: (r) => r.opening + r.charged - r.paid,
+          html: (r) => `<div><span class="k">ANT:</span><span class="${r.opening ? '' : 'zero'}">${money(r.opening)}</span></div><div><span class="k">+CARGOS:</span><span class="fw-semibold">${money(r.charged)}</span></div><div><span class="k text-success">−PAGOS:</span><span class="${r.paid ? 'text-success fw-semibold' : 'zero'}">${money(r.paid)}</span></div>` },
+        { title: 'Saldo anterior', exportOnly: true, sum: false, value: (r) => r.opening },
+        { title: 'Cargos del mes', exportOnly: true, sum: true, value: (r) => r.charged },
+        { title: 'Pagos', exportOnly: true, sum: true, value: (r) => r.paid },
+        { title: 'Saldo al corte', money: true, priority: 2, value: (m) => m.closing,
+          html: (m) => `<span class="total-pill ${m.closing > 0 ? (m.future ? '' : 'bad') : 'ok'}">${money(m.closing)}</span>${m.pending_total ? `<div class="small text-danger mt-1 text-nowrap" title="Pendiente de los cargos de este mes">pend. ${money(m.pending_total)}</div>` : ''}` },
+        { title: 'Pendiente de este corte', exportOnly: true, sum: true, value: (m) => m.pending_total },
       ];
       // Corte de un mes con cada unidad (los totales del pie son los del edificio).
       const CUT_UNIT_COLS = [
         { title: 'Unidad', value: (r) => `${r.property_name} · ${unitLabel(r)} · ${r.owner_name || ''}`,
-          html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:12rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>` },
-        { title: 'Saldo anterior', sum: true, priority: 6, value: (r) => r.opening, html: (r) => cut(r.opening) },
-        ...CK.map((k) => ({ title: `${App.CONCEPTS[k]} (${SHORT[k]})`, sum: true, value: (r) => r.charges[k], html: (r) => cut(r.charges[k]), priority: 20 })),
-        { title: 'Cargos del mes', sum: true, priority: 4, value: (r) => r.charged, html: (r) => `<span class="fw-semibold">${money(r.charged)}</span>` },
-        { title: 'Pagos', sum: true, priority: 3, value: (r) => r.paid, html: (r) => cut(r.paid, 'text-success fw-semibold') },
-        { title: 'Saldo al corte', sum: true, priority: 2, value: (r) => r.closing, html: (r) => `<span class="total-pill ${r.closing > 0 ? 'bad' : 'ok'}">${money(r.closing)}</span>` },
-        { title: 'Pendiente de este mes', sum: true, priority: 5, value: (r) => r.pending_total, html: (r) => cut(r.pending_total, 'text-danger') },
+          html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:9rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>` },
+        ...conceptCols(G),
+        { title: 'Anterior / Cargos / Pagos', className: 'stack-cell', noExport: true, priority: 4, value: (r) => r.opening + r.charged - r.paid,
+          html: (r) => `<div><span class="k">ANT:</span><span class="${r.opening ? '' : 'zero'}">${money(r.opening)}</span></div><div><span class="k">+CARGOS:</span><span class="fw-semibold">${money(r.charged)}</span></div><div><span class="k text-success">−PAGOS:</span><span class="${r.paid ? 'text-success fw-semibold' : 'zero'}">${money(r.paid)}</span></div>` },
+        { title: 'Saldo anterior', exportOnly: true, sum: true, value: (r) => r.opening },
+        { title: 'Cargos del mes', exportOnly: true, sum: true, value: (r) => r.charged },
+        { title: 'Pagos', exportOnly: true, sum: true, value: (r) => r.paid },
+        { title: 'Saldo al corte', sum: true, priority: 2, value: (r) => r.closing,
+          html: (r) => `<span class="total-pill ${r.closing > 0 ? 'bad' : 'ok'}">${money(r.closing)}</span>${r.pending_total ? `<div class="small text-danger mt-1 text-nowrap" title="Pendiente de los cargos de este mes">pend. ${money(r.pending_total)}</div>` : ''}` },
+        { title: 'Pendiente de este mes', exportOnly: true, sum: true, value: (r) => r.pending_total },
         { title: '', noExport: true, orderable: false, className: 'text-end', priority: 7,
           html: (r) => `<button class="btn btn-sm btn-outline-secondary" data-cut-history="${esc(r.unit_id)}" title="Historial de la unidad"><i class="bi bi-clock-history"></i></button>` },
       ];
@@ -273,13 +297,13 @@
               return t;
             }, { opening: 0, charged: 0, paid: 0, closing: 0, pending_total: 0, charges: Object.fromEntries(CK.map((c) => [c, 0])) });
             $('cutTotals').innerHTML = totalsHtml(tot, `Totales del corte ${App.fmtMonth(month)} · ${u ? unitLabel(u) : esc(place)} · ${d.items.length} unidades · corte al ${App.fmtDate(lastDay(month))}`);
-            await App.dataTable($('cutUnitsTable'), { columns: CUT_UNIT_COLS, data: d.items.map((r) => ({ ...r, id: r.unit_id })), order: [[11, 'desc']],
+            await App.dataTable($('cutUnitsTable'), { columns: CUT_UNIT_COLS, data: d.items.map((r) => ({ ...r, id: r.unit_id })), order: [[15, 'desc']], onDraw: cutFooter,
               title: `Corte ${month} ${u ? u.property_name + ' ' + unitLabel(u) : place}`, pageLength: 50 });
             $('cutUnitsTable')._dt.columns.adjust().responsive.recalc();
           } else {
             $('cutTotals').innerHTML = '';
             const d = await App.api('/charges/cuts' + App.qs({ unit: $('cutUnit').value }));
-            await App.dataTable($('cutsTable'), { columns: CUT_COLS, data: d.months.map((m) => ({ ...m, id: m.period })), order: [[0, 'desc']],
+            await App.dataTable($('cutsTable'), { columns: CUT_COLS, data: d.months.map((m) => ({ ...m, id: m.period })), order: [[0, 'desc']], onDraw: cutFooter,
               title: u ? `Cortes mensuales ${u.property_name} ${unitLabel(u)}` : `Cortes mensuales ${place}` });
             $('cutsTable')._dt.columns.adjust().responsive.recalc();
           }
