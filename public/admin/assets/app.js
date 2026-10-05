@@ -9,6 +9,9 @@ const App = (() => {
   // Login: el del negocio (/<slug>/admin/login) o el genérico en la raíz "/".
   const LOGIN = SLUG ? `${BASE}/login` : '/';
   const onLogin = () => location.pathname === '/' || location.pathname.startsWith(`${BASE}/login`);
+  // Enlaces del panel con el negocio en la ruta: /admin/x -> /<slug>/admin/x (sin el 302 del servidor en cada clic).
+  const link = (path) => (SLUG && /^\/admin(\/|$|\?)/.test(path) && !path.startsWith('/admin/assets/') ? `/${SLUG}${path}` : path);
+  const go = (path) => { location.href = link(path); };
   let me = null;
   let properties = [];
   const propertyListeners = [];
@@ -104,6 +107,51 @@ const App = (() => {
     return html;
   }
 
+  // Usuario y conjuntos de la sesión, guardados en la pestaña: el menú se dibuja al instante en cada página
+  // y se confirma con el servidor en segundo plano.
+  const SHELL_KEY = `cdr_shell_${SLUG || 'default'}`;
+  const shellCache = {
+    get() { try { return JSON.parse(sessionStorage.getItem(SHELL_KEY)); } catch { return null; } },
+    set(v) { try { v ? sessionStorage.setItem(SHELL_KEY, JSON.stringify(v)) : sessionStorage.removeItem(SHELL_KEY); } catch { /* sin almacenamiento */ } },
+  };
+  // Al entrar o salir se borra el de todos los negocios.
+  function clearShell() {
+    try { Object.keys(sessionStorage).filter((k) => k.startsWith('cdr_shell_')).forEach((k) => sessionStorage.removeItem(k)); } catch { /* sin almacenamiento */ }
+  }
+
+  // ---------- barra de progreso ----------
+
+  let inflight = 0;
+  let barTimer;
+  function progressBar() {
+    let bar = document.getElementById('cdr-progress');
+    if (!bar && document.body) {
+      bar = document.createElement('div');
+      bar.id = 'cdr-progress';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
+  function progress(delta) {
+    inflight = Math.max(0, inflight + delta);
+    clearTimeout(barTimer);
+    const bar = progressBar();
+    if (!bar) return;
+    if (inflight) barTimer = setTimeout(() => bar.classList.add('on'), 150);  // solo si tarda
+    else bar.classList.remove('on');
+  }
+  // Al seguir un enlace interno la barra arranca de una vez (la página siguiente puede tardar).
+  document.addEventListener('click', (ev) => {
+    const a = ev.target.closest('a[href]');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (href.startsWith('/admin')) a.setAttribute('href', link(href));
+    if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || a.target === '_blank' || href.startsWith('#')) return;
+    if (new URL(a.href).origin === location.origin && !a.href.includes('/api/')) progressBar()?.classList.add('on');
+  });
+  // Volver con el botón atrás (bfcache) no debe dejar la barra encendida.
+  window.addEventListener('pageshow', () => { inflight = 0; document.getElementById('cdr-progress')?.classList.remove('on'); });
+
   // ---------- API ----------
 
   async function api(path, { method = 'GET', body, form } = {}) {
@@ -114,15 +162,22 @@ const App = (() => {
       headers['content-type'] = 'application/json';
       payload = JSON.stringify(body);
     }
-    const res = await fetch(API + path, { method, headers, body: payload, credentials: 'same-origin' });
-    const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    progress(1);
+    let res, data;
+    try {
+      res = await fetch(API + path, { method, headers, body: payload, credentials: 'same-origin' });
+      data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    } finally {
+      progress(-1);
+    }
     if (!res.ok) {
+      if (['NO_SESSION', 'NOT_MEMBER', 'NO_BUSINESS'].includes(data?.code)) shellCache.set(null);
       if (data?.code === 'NO_SESSION' && !onLogin()) {
         location.href = `${LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
         return new Promise(() => {});
       }
       if (data?.code === 'NOT_MEMBER' || (data?.code === 'NO_BUSINESS' && SLUG)) {
-        location.href = '/admin/';  // a su propio negocio
+        location.href = '/admin/';  // a su propio negocio (lo resuelve el servidor)
         return new Promise(() => {});
       }
       const err = new Error(data?.error || `Error ${res.status}`);
@@ -385,13 +440,13 @@ const App = (() => {
     const s = me.session || {};
     const all = NAV.flatMap(([, items]) => items);
     const sideHtml = `
-      <a class="side-brand" href="/admin/">
+      <a class="side-brand" href="${link('/admin/')}">
         <span class="side-logo">${s.businessLogo ? `<img src="${esc(s.businessLogo)}" alt="">` : BRAND_SVG}</span>
         <span><span class="d-block fw-bold">Diwilo</span><span class="side-sub">Residencial AI</span></span>
       </a>
       ${NAV.map(([label, items]) => `
         <div class="side-label">${esc(label)}</div>
-        ${items.map(([key, href, icon, text]) => `<a class="side-link ${key === active ? 'active' : ''}" href="${href}" ${key === active ? 'aria-current="page"' : ''}>
+        ${items.map(([key, href, icon, text]) => `<a class="side-link ${key === active ? 'active' : ''}" href="${link(href)}" ${key === active ? 'aria-current="page"' : ''}>
           <i class="bi ${icon}"></i><span>${text}</span>${key === 'asistente' ? '<span class="ai-dot"></span>' : ''}</a>`).join('')}`).join('')}
       <div class="side-foot">
         <div class="small fw-semibold text-truncate">${esc(s.businessName || '')}</div>
@@ -430,7 +485,9 @@ const App = (() => {
       </header>`;
     while (shell.firstChild) document.body.prepend(shell.lastChild);
     document.body.classList.add('has-side');
-    document.querySelector('main')?.classList.add('cdr-enter');
+    // Con transiciones entre páginas (View Transitions) la animación la hace el navegador.
+    if (!('onpagereveal' in window)) document.querySelector('main')?.classList.add('cdr-enter');
+    document.querySelectorAll('a[href^="/admin"]').forEach((a) => a.setAttribute('href', link(a.getAttribute('href'))));
 
     // Barra inferior en celular.
     const bar = document.createElement('nav');
@@ -438,17 +495,12 @@ const App = (() => {
     bar.setAttribute('aria-label', 'Secciones');
     bar.innerHTML = BOTTOM.map((key) => {
       const [, href, icon, label] = all.find(([k]) => k === key);
-      return `<a href="${href}" class="${key === active ? 'active' : ''}"><i class="bi ${icon}"></i><span>${label}</span></a>`;
+      return `<a href="${link(href)}" class="${key === active ? 'active' : ''}"><i class="bi ${icon}"></i><span>${label}</span></a>`;
     }).join('') + `<button type="button" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" class="${BOTTOM.includes(active) ? '' : 'active'}"><i class="bi bi-grid"></i><span>Más</span></button>`;
     document.body.appendChild(bar);
     document.body.classList.add('has-bottom-nav');
 
-    if (s.readOnly) {
-      const ro = document.createElement('div');
-      ro.className = 'alert alert-danger rounded-0 border-0 text-center small fw-semibold py-2 mb-0 readonly-bar';
-      ro.innerHTML = '<i class="bi bi-lock-fill me-1"></i>La suscripción está vencida: puedes consultar, pero no guardar cambios.';
-      document.querySelector('.topbar').after(ro);
-    }
+    setReadOnly(s.readOnly);
 
     document.querySelectorAll('[data-property-select]').forEach((sel) => sel.addEventListener('change', () => setProperty(sel.value)));
     document.body.addEventListener('click', async (ev) => {
@@ -456,6 +508,7 @@ const App = (() => {
       if (b && b.closest('.dropdown-menu')) {
         try {
           await api('/auth/business', { method: 'POST', body: { businessId: b.dataset.business } });
+          clearShell();
           location.href = `/${b.dataset.slug}/admin/`;
         } catch (err) { fail(err); }
         return;
@@ -463,11 +516,22 @@ const App = (() => {
       const a = ev.target.closest('[data-action]');
       if (a?.dataset.action === 'logout') {
         await api('/auth/logout', { method: 'POST' }).catch(() => {});
+        clearShell();
         location.href = LOGIN;
       } else if (a?.dataset.action === 'change-password') {
         changePasswordDialog();
       }
     });
+  }
+
+  function setReadOnly(on) {
+    let ro = document.querySelector('.readonly-bar');
+    if (on && !ro) {
+      ro = document.createElement('div');
+      ro.className = 'alert alert-danger rounded-0 border-0 text-center small fw-semibold py-2 mb-0 readonly-bar';
+      ro.innerHTML = '<i class="bi bi-lock-fill me-1"></i>La suscripción está vencida: puedes consultar, pero no guardar cambios.';
+      document.querySelector('.topbar').after(ro);
+    } else if (!on && ro) ro.remove();
   }
 
   function changePasswordDialog() {
@@ -503,20 +567,68 @@ const App = (() => {
       if (!b) return;
       try {
         await api('/auth/business', { method: 'POST', body: { businessId: b.dataset.business } });
+        clearShell();
         location.href = `/${b.dataset.slug}/admin/`;
       } catch (err) { fail(err); }
     });
   }
 
+  const propsSig = (list) => JSON.stringify(list.map((p) => [p.id, p.name, p.status, p.logo]));
+
+  async function fetchShell() {
+    const fresh = await api('/auth/me');
+    const props = fresh.session?.businessId ? (await api('/properties')).items : [];
+    if (fresh.session) shellCache.set({ me: fresh, properties: props });
+    return { fresh, props };
+  }
+
+  // Confirma con el servidor lo que se dibujó desde la caché y ajusta lo que haya cambiado.
+  async function revalidate() {
+    try {
+      const { fresh, props } = await fetchShell();
+      if (!fresh.session || fresh.session.businessId !== me.session.businessId || fresh.session.role !== me.session.role) {
+        location.reload();
+        return;
+      }
+      setReadOnly(fresh.session.readOnly);
+      me = fresh;
+      const changed = propsSig(props) !== propsSig(properties);
+      properties = props;
+      if (changed) {
+        document.querySelectorAll('[data-property-select]').forEach((sel) => (sel.innerHTML = propertyOptions(currentProperty(), { blank: true })));
+      }
+    } catch { /* sin conexión: queda lo de la caché */ }
+  }
+
+  // Precarga la página de un enlace del panel al pasar el mouse (Speculation Rules; Chrome y Edge).
+  function prefetchLinks() {
+    if (!SLUG || !HTMLScriptElement.supports?.('speculationrules')) return;
+    const s = document.createElement('script');
+    s.type = 'speculationrules';
+    s.textContent = JSON.stringify({ prefetch: [{ where: { href_matches: `/${SLUG}/admin/*` }, eagerness: 'moderate' }] });
+    document.head.appendChild(s);
+  }
+
   // Devuelve la info del usuario o null si la página no debe continuar (falta negocio).
   async function init(active, { needsBusiness = true, title } = {}) {
-    me = await api('/auth/me');
-    if (!me.session) {
-      location.href = `${LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
-      return null;
+    const cached = shellCache.get();
+    if (cached?.me?.session) {
+      // Se dibuja antes del primer pintado: el menú no parpadea al cambiar de página.
+      me = cached.me;
+      properties = cached.properties || [];
+      renderShell(active, { title });
+      revalidate();
+    } else {
+      const { fresh, props } = await fetchShell();
+      me = fresh;
+      if (!me.session) {
+        location.href = `${LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
+        return null;
+      }
+      properties = props;
+      renderShell(active, { title });
     }
-    if (me.session.businessId) properties = (await api('/properties')).items;
-    renderShell(active, { title });
+    prefetchLinks();
     if (needsBusiness && !me.session.businessId) {
       businessPicker();
       return null;
@@ -527,13 +639,17 @@ const App = (() => {
   const canManage = () => ['owner', 'admin'].includes(me?.session?.role);
 
   return {
-    api, qs, init, toast, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
+    api, qs, init, link, go, clearShell, toast, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
     onSubmit, formData, fillForm, confirmAction, param, badge, canManage,
     fmtDate, fmtTime, fmtDateTime, fmtMonth, fmtNum, money, moneyShort, unitLabel, initials, daysSince, todayLocal, addDays,
     currentProperty, setProperty, onProperty, propertyOptions, propertyName,
     ROLE, KIND, OCCUPANCY, CONCEPTS, MESES_LARGOS,
     get me() { return me; },
     get properties() { return properties; },
-    set properties(v) { properties = v; },
+    set properties(v) {
+      properties = v;
+      const c = shellCache.get();
+      if (c) shellCache.set({ ...c, properties: v });
+    },
   };
 })();

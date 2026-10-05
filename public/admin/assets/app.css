@@ -251,3 +251,36 @@ h1, h2, h3, h4, h5, .page-title, .modal-title { letter-spacing: -.015em; font-we
   .filters .form-select, .filters .form-control { min-width: 0; flex: 1 1 45%; }
 }
 .min-w-0 { min-width: 0; }
+
+/* ---------- transiciones entre páginas ---------- */
+/* View Transitions entre documentos (Chrome/Edge 126+, Safari 18.2+): el menú y la barra superior quedan quietos
+   y solo el contenido cambia con un fundido corto. Sin soporte, cada página entra con .cdr-enter. */
+@view-transition { navigation: auto; }
+body > .side { view-transition-name: side; }
+.topbar { view-transition-name: topbar; }
+.bottom-nav { view-transition-name: bottom-nav; }
+body > main { view-transition-name: page; }
+::view-transition-old(side), ::view-transition-old(topbar), ::view-transition-old(bottom-nav) { display: none; }
+::view-transition-new(side), ::view-transition-new(topbar), ::view-transition-new(bottom-nav) { animation: none; }
+::view-transition-group(side), ::view-transition-group(topbar), ::view-transition-group(bottom-nav) { animation-duration: 0s; }
+::view-transition-old(page) { animation: cdr-page-out .14s ease-in both; }
+::view-transition-new(page) { animation: cdr-page-in .26s cubic-bezier(.2,.8,.2,1) .04s both; }
+::view-transition-group(page) { animation-duration: .3s; }
+@keyframes cdr-page-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes cdr-page-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+/* Espacio del menú lateral reservado desde el primer pintado (no salta el contenido). */
+@media (min-width: 992px) { body:has(> main.container-fluid) { padding-left: 248px; } }
+
+/* Barra de progreso: API lenta o navegación en curso. */
+#cdr-progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 2000; pointer-events: none;
+  background: linear-gradient(90deg, #10B981, #7C3AED); transform-origin: left; transform: scaleX(0); opacity: 0;
+  transition: opacity .25s ease .1s, transform .25s ease;
+}
+#cdr-progress.on { opacity: 1; transition: opacity .1s; animation: cdr-progress 2.2s cubic-bezier(.1,.7,.2,1) forwards; }
+@keyframes cdr-progress { from { transform: scaleX(.04); } to { transform: scaleX(.9); } }
+@media (prefers-reduced-motion: reduce) { #cdr-progress.on { animation: none; transform: scaleX(.6); } }

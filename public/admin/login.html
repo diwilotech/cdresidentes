@@ -99,6 +99,7 @@
           if (d.password !== d.password2) { $('inviteErr').textContent = 'Las contraseñas no coinciden'; return; }
           try {
             await App.api('/auth/invite', { method: 'POST', body: { token, password: d.password, name: d.name } });
+            App.clearShell();
             history.replaceState(null, '', location.pathname + location.search);
             location.replace(target);
           } catch (err) {
@@ -117,6 +118,7 @@
         $('loginErr').textContent = '';
         try {
           const r = await App.api('/auth/login', { method: 'POST', body: { email: d.email, password: d.password } });
+          App.clearShell();
           if (r.mustSetPassword) return showInvite(r.invite, 'Crea una contraseña de al menos 8 caracteres para seguir.');
           location.replace(target);
         } catch (err) {
