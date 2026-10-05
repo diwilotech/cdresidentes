@@ -73,10 +73,13 @@
 
     <div class="card d-none" id="tab-cuts">
       <div class="filters">
-        <select id="cutUnit" class="form-select" style="max-width:24rem"><option value="">Todas las unidades</option></select>
+        <select id="cutMonth" class="form-select" style="max-width:16rem" aria-label="Mes de corte"></select>
+        <select id="cutUnit" class="form-select" style="max-width:24rem" aria-label="Unidad"><option value="">Todas las unidades</option></select>
         <span class="small text-body-secondary align-self-center">Saldo anterior + cargos del mes − pagos = saldo al corte (último día del mes).</span>
       </div>
-      <table class="table table-hover align-middle w-100" id="cutsTable"></table>
+      <div class="px-3 pt-3" id="cutTotals"></div>
+      <div id="cutUnitsBox"><table class="table table-hover align-middle w-100" id="cutUnitsTable"></table></div>
+      <div id="cutsBox" class="d-none"><table class="table table-hover align-middle w-100" id="cutsTable"></table></div>
     </div>
 
     <div class="card d-none" id="tab-moves">
@@ -218,7 +221,29 @@
         { title: 'Saldo al corte', money: true, priority: 2, value: (m) => m.closing, html: (m) => `<span class="total-pill ${m.closing > 0 ? (m.future ? '' : 'bad') : 'ok'}">${money(m.closing)}</span>` },
         { title: 'Pendiente de este corte', sum: true, priority: 5, value: (m) => m.pending_total, html: (m) => cut(m.pending_total, 'text-danger') },
       ];
+      // Corte de un mes con cada unidad (los totales del pie son los del edificio).
+      const CUT_UNIT_COLS = [
+        { title: 'Unidad', value: (r) => `${r.property_name} · ${unitLabel(r)} · ${r.owner_name || ''}`,
+          html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:12rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>` },
+        { title: 'Saldo anterior', sum: true, priority: 6, value: (r) => r.opening, html: (r) => cut(r.opening) },
+        ...CK.map((k) => ({ title: `${App.CONCEPTS[k]} (${SHORT[k]})`, sum: true, value: (r) => r.charges[k], html: (r) => cut(r.charges[k]), priority: 20 })),
+        { title: 'Cargos del mes', sum: true, priority: 4, value: (r) => r.charged, html: (r) => `<span class="fw-semibold">${money(r.charged)}</span>` },
+        { title: 'Pagos', sum: true, priority: 3, value: (r) => r.paid, html: (r) => cut(r.paid, 'text-success fw-semibold') },
+        { title: 'Saldo al corte', sum: true, priority: 2, value: (r) => r.closing, html: (r) => `<span class="total-pill ${r.closing > 0 ? 'bad' : 'ok'}">${money(r.closing)}</span>` },
+        { title: 'Pendiente de este mes', sum: true, priority: 5, value: (r) => r.pending_total, html: (r) => cut(r.pending_total, 'text-danger') },
+        { title: '', noExport: true, orderable: false, className: 'text-end', priority: 7,
+          html: (r) => `<button class="btn btn-sm btn-outline-secondary" data-cut-history="${esc(r.unit_id)}" title="Historial de la unidad"><i class="bi bi-clock-history"></i></button>` },
+      ];
+      const lastDay = (ym) => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5), 0)).toISOString().slice(0, 10);
+      const totalsHtml = (t, title) => {
+        const k = (l, v, cls = '') => `<div class="col-6 col-md"><div class="stat-strip ${cls} h-100"><div class="lbl">${l}</div><div class="val">${money(v)}</div></div></div>`;
+        return `<div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-2"><div class="fw-bold">${title}</div>
+            <div class="small text-body-secondary">${CK.map((c) => `${SHORT[c]} ${money(t.charges[c])}`).join(' · ')}</div></div>
+          <div class="row g-2">${k('Saldo anterior', t.opening)}${k('Cargos del mes', t.charged)}${k('Pagos del mes', t.paid)}${k('Saldo al corte', t.closing, 'red')}${k('Pendiente del mes', t.pending_total, 'violet')}</div>`;
+      };
+
       let unitsList = null;
+      let monthsReady = false;
       async function loadCuts() {
         try {
           if (!unitsList) {
@@ -226,10 +251,38 @@
             const sel = $('cutUnit').value || unit;
             $('cutUnit').innerHTML = '<option value="">Todas las unidades</option>' + unitsList.map((u) => `<option value="${esc(u.id)}" ${u.id === sel ? 'selected' : ''}>${esc(unitLabel(u))} · ${esc(u.owner_name || '')}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</option>`).join('');
           }
-          const d = await App.api('/charges/cuts' + App.qs({ unit: $('cutUnit').value }));
+          if (!monthsReady) {
+            // Meses con movimientos (de la administración o del conjunto) + el actual.
+            const { months } = await App.api('/charges/cuts' + App.qs());
+            const list = [...new Set([today.slice(0, 7), ...months.map((m) => m.period)])].sort().reverse();
+            const cur = $('cutMonth').value || today.slice(0, 7);
+            $('cutMonth').innerHTML = list.map((m) => `<option value="${m}" ${m === cur ? 'selected' : ''}>Corte ${App.fmtMonth(m)}${m > today.slice(0, 7) ? ' (por facturar)' : ''}</option>`).join('') +
+              `<option value="" ${cur === '' ? 'selected' : ''}>Historial: todos los meses</option>`;
+            monthsReady = true;
+          }
+          const month = $('cutMonth').value;
           const u = unitsList.find((x) => x.id === $('cutUnit').value);
-          await App.dataTable($('cutsTable'), { columns: CUT_COLS, data: d.months.map((m) => ({ ...m, id: m.period })), order: [[0, 'desc']],
-            title: u ? `Cortes mensuales ${u.property_name} ${unitLabel(u)}` : 'Cortes mensuales' });
+          const place = App.currentProperty() ? App.propertyName(App.currentProperty()) : 'todos los conjuntos';
+          $('cutUnitsBox').classList.toggle('d-none', !month);
+          $('cutsBox').classList.toggle('d-none', !!month);
+          if (month) {
+            const d = await App.api('/charges/cut' + App.qs({ period: month, unit: $('cutUnit').value }));
+            const tot = d.items.reduce((t, r) => {
+              for (const f of ['opening', 'charged', 'paid', 'closing', 'pending_total']) t[f] += r[f];
+              for (const c of CK) t.charges[c] += r.charges[c];
+              return t;
+            }, { opening: 0, charged: 0, paid: 0, closing: 0, pending_total: 0, charges: Object.fromEntries(CK.map((c) => [c, 0])) });
+            $('cutTotals').innerHTML = totalsHtml(tot, `Totales del corte ${App.fmtMonth(month)} · ${u ? unitLabel(u) : esc(place)} · ${d.items.length} unidades · corte al ${App.fmtDate(lastDay(month))}`);
+            await App.dataTable($('cutUnitsTable'), { columns: CUT_UNIT_COLS, data: d.items.map((r) => ({ ...r, id: r.unit_id })), order: [[11, 'desc']],
+              title: `Corte ${month} ${u ? u.property_name + ' ' + unitLabel(u) : place}`, pageLength: 50 });
+            $('cutUnitsTable')._dt.columns.adjust().responsive.recalc();
+          } else {
+            $('cutTotals').innerHTML = '';
+            const d = await App.api('/charges/cuts' + App.qs({ unit: $('cutUnit').value }));
+            await App.dataTable($('cutsTable'), { columns: CUT_COLS, data: d.months.map((m) => ({ ...m, id: m.period })), order: [[0, 'desc']],
+              title: u ? `Cortes mensuales ${u.property_name} ${unitLabel(u)}` : `Cortes mensuales ${place}` });
+            $('cutsTable')._dt.columns.adjust().responsive.recalc();
+          }
         } catch (err) { App.fail(err); }
       }
 
@@ -240,7 +293,7 @@
         $('tabs').querySelectorAll('.nav-link').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
         for (const k of Object.keys(LOADERS)) $(`tab-${k}`).classList.toggle('d-none', t !== k);
         await LOADERS[t]();
-        $({ units: 'unitsTable', moves: 'movesTable', cuts: 'cutsTable' }[t])._dt?.columns.adjust().responsive.recalc();
+        $({ units: 'unitsTable', moves: 'movesTable', cuts: $('cutMonth').value ? 'cutUnitsTable' : 'cutsTable' }[t])._dt?.columns.adjust().responsive.recalc();
       }
 
       // ---------- diálogos ----------
@@ -278,7 +331,7 @@
           if (b.dataset.payItem) { hide(); payOne(items.find((c) => c.id === b.dataset.payItem), r); }
           if (b.dataset.payallModal) { hide(); payAll(unitId); }
           if (b.dataset.pdfModal) CuentaCobro.open({ unit: unitId });
-          if (b.dataset.cutsModal) { hide(); if (unitsList) $('cutUnit').value = unitId; else unit = unitId; showTab('cuts'); }
+          if (b.dataset.cutsModal) { hide(); if (unitsList) $('cutUnit').value = unitId; else unit = unitId; $('cutMonth').value = ''; showTab('cuts'); }
         });
       }
 
@@ -402,7 +455,8 @@
         try {
           if (b.dataset.tab) return showTab(b.dataset.tab);
           if (b.dataset.items) return itemsDialog(b.dataset.items);
-          if (b.dataset.cuts) { if (unitsList) $('cutUnit').value = b.dataset.cuts; else unit = b.dataset.cuts; return showTab('cuts'); }
+          if (b.dataset.cutHistory) { $('cutUnit').value = b.dataset.cutHistory; $('cutMonth').value = ''; return loadCuts(); }
+          if (b.dataset.cuts) { if (unitsList) $('cutUnit').value = b.dataset.cuts; else unit = b.dataset.cuts; $('cutMonth').value = ''; return showTab('cuts'); }
           if (b.dataset.pdf) return CuentaCobro.open({ unit: b.dataset.pdf });
           if (b.dataset.cobrar) return cobrar(b.dataset.cobrar);
           if (b.dataset.payall) return payAll(b.dataset.payall);
@@ -415,7 +469,9 @@
       });
       $('scope').addEventListener('change', loadUnits);
       $('cutUnit').addEventListener('change', loadCuts);
-      App.onProperty(() => { unitsList = null; });
+      $('cutMonth').addEventListener('change', loadCuts);
+      App.onRowClick($('cutsTable'), (period) => { $('cutMonth').value = period; $('cutUnit').value = ''; loadCuts(); });
+      App.onProperty(() => { unitsList = null; monthsReady = false; });
       ['status', 'concept'].forEach((id) => $(id).addEventListener('change', loadMoves));
       $('newBtn').addEventListener('click', newCharge);
       $('pdfBatch').addEventListener('click', pdfBatch);

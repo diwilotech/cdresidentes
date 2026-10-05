@@ -165,6 +165,51 @@ export function routes(r) {
     return json({ months: out.reverse().slice(0, 36), concepts: CONCEPTS });
   });
 
+  // Corte de un mes por unidad (?period=YYYY-MM, ?property=, ?unit=): mismas reglas que /cuts, una fila por unidad;
+  // la suma de las filas da los totales del edificio.
+  r.get('/api/admin/charges/cut', 'tenant', async (c) => {
+    const sp = c.url.searchParams;
+    const per = period(sp.get('period'), 'Mes de corte') || today().slice(0, 7);
+    const args = [c.businessId];
+    let where = '';
+    if (sp.get('property')) { where += ' AND u.property_id = ?'; args.push(sp.get('property')); }
+    if (sp.get('unit')) { where += ' AND u.id = ?'; args.push(sp.get('unit')); }
+    const db = tenantDb(c);
+    const [units, rows] = await Promise.all([
+      db.all(
+        `SELECT u.id, u.tower, u.number, u.owner_name, u.coefficient, u.property_id, p.name AS property_name
+           FROM units u JOIN properties p ON p.id = u.property_id WHERE u.business_id = ?${where}
+          ORDER BY p.name, u.tower, CAST(u.number AS INTEGER), u.number`,
+        ...args,
+      ),
+      db.all(
+        `SELECT ch.unit_id, ch.concept, ch.amount, ch.due_date, ch.paid_at FROM charges ch JOIN units u ON u.id = ch.unit_id
+          WHERE ch.business_id = ?${where} AND substr(ch.due_date, 1, 7) <= ?`,
+        ...args, per,
+      ),
+    ]);
+    const zero = () => Object.fromEntries(Object.keys(CONCEPTS).map((k) => [k, 0]));
+    const acc = Object.fromEntries(units.map((u) => [u.id, { opening: 0, charges: zero(), paid: 0, pending: 0 }]));
+    for (const ch of rows) {
+      const a = acc[ch.unit_id];
+      const due = ch.due_date.slice(0, 7);
+      const pm = ch.paid_at ? (ch.paid_at.slice(0, 7) > due ? ch.paid_at.slice(0, 7) : due) : null;
+      if (due < per) a.opening += ch.amount; else a.charges[ch.concept] += ch.amount;
+      if (pm && pm < per) a.opening -= ch.amount;
+      if (pm === per) a.paid += ch.amount;
+      if (due === per && !ch.paid_at) a.pending += ch.amount;
+    }
+    return json({
+      period: per,
+      concepts: CONCEPTS,
+      items: units.map((u) => {
+        const a = acc[u.id];
+        const charged = Object.values(a.charges).reduce((x, y) => x + y, 0);
+        return { ...u, unit_id: u.id, opening: a.opening, charges: a.charges, charged, paid: a.paid, closing: a.opening + charged - a.paid, pending_total: a.pending };
+      }),
+    });
+  });
+
   // ---------- cuentas de cobro (datos para el PDF; el PDF se arma en el navegador) ----------
   // ?unit=<id> una unidad · ?property=<id> todo el conjunto · ?all=1 incluye unidades sin saldo
 
