@@ -24,9 +24,13 @@ async function contextFor(c, propertyId) {
     db.all(
       `SELECT p.id, p.name, p.city, p.towers,
               (SELECT COUNT(*) FROM units u WHERE u.business_id = p.business_id AND u.property_id = p.id) AS units,
-              (SELECT COALESCE(SUM(residents), 0) FROM units u WHERE u.business_id = p.business_id AND u.property_id = p.id) AS residents
+              (SELECT COALESCE(SUM(residents), 0) FROM units u WHERE u.business_id = p.business_id AND u.property_id = p.id) AS residents,
+              (SELECT COALESCE(SUM(ch.amount), 0) FROM charges ch JOIN units u ON u.id = ch.unit_id
+                WHERE ch.business_id = p.business_id AND u.property_id = p.id AND ch.paid_at IS NULL AND ch.due_date < ?) AS overdue,
+              (SELECT COUNT(DISTINCT ch.unit_id) FROM charges ch JOIN units u ON u.id = ch.unit_id
+                WHERE ch.business_id = p.business_id AND u.property_id = p.id AND ch.paid_at IS NULL AND ch.due_date < ?) AS debtors
          FROM properties p WHERE p.business_id = ? AND p.status = 'active'${propertyId ? ' AND p.id = ?' : ''} ORDER BY p.name`,
-      c.businessId, ...pa,
+      t, t, c.businessId, ...pa,
     ),
     db.all(`SELECT * FROM (${UNIT_DEBT_SQL} WHERE u.business_id = ?${propertyId ? ' AND u.property_id = ?' : ''}) WHERE overdue > 0 ORDER BY overdue DESC LIMIT 20`, c.businessId, ...pa),
     db.first(
@@ -55,10 +59,10 @@ async function contextFor(c, propertyId) {
   const lines = [
     `Administración: ${biz.name}. Fecha de hoy: ${t}.`,
     propertyId ? `Conjunto en foco: ${props[0]?.name || '—'}.` : `Conjuntos administrados: ${props.length}.`,
-    ...props.map((p) => `- ${p.name}${p.city ? ` (${p.city})` : ''}: ${p.units} unidades, ${p.residents} habitantes${p.towers ? `, torres: ${p.towers}` : ''}`),
+    ...props.map((p) => `- ${p.name}${p.city ? ` (${p.city})` : ''}: ${p.units} unidades, ${p.residents} habitantes${p.towers ? `, torres: ${p.towers}` : ''}; cartera vencida ${money(p.overdue)} en ${p.debtors} unidades`),
     '',
     `CARTERA: vencida ${money(totals.overdue)}; recaudado este mes ${money(totals.collected_month)}; ${totals.debtors} de ${totals.units} unidades en mora (${totals.units ? Math.round((totals.debtors / totals.units) * 100) : 0}%).`,
-    debtors.length ? 'Unidades con mayor deuda vencida:' : 'No hay unidades en mora.',
+    debtors.length ? `Unidades con mayor deuda vencida (las ${debtors.length} más altas; los totales por conjunto están arriba):` : 'No hay unidades en mora.',
     ...debtors.map((u) => {
       const days = u.oldest_due ? Math.round((Date.parse(t) - Date.parse(u.oldest_due)) / 864e5) : 0;
       return `- ${u.property_name} ${unitLabel(u)} · ${u.owner_name || 'sin propietario'} · debe ${money(u.overdue)} · ${days} días de atraso${u.owner_phone ? ' · tiene WhatsApp' : ''}`;
