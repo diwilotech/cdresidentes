@@ -19,7 +19,17 @@ export const BILLING_DEFAULTS = {
   ext_mode: 'coefficient', // reparto de cuotas extraordinarias: coefficient | equal
   ext_installments: 1,     // cuotas en que se difiere una extraordinaria
   note: '',                // texto al pie de la cuenta de cobro
+  // Conceptos que usa la administración, además de la cuota de administración (que siempre está).
+  concepts: ['rtc', 'ext', 'jur', 'int', 'parking', 'other'],
 };
+export const OPTIONAL_CONCEPTS = ['rtc', 'ext', 'jur', 'int', 'parking', 'other'];
+
+// Lanza 400 si el concepto está desactivado en Ajustes (la cuota de administración siempre se puede usar).
+export function assertConcept(billing, concept) {
+  if (concept !== 'admin' && !billing.concepts.includes(concept)) {
+    throw new HttpError(400, `${CONCEPTS[concept]} está desactivado en Ajustes → Cartera y cuenta de cobro`);
+  }
+}
 
 export function parseBilling(raw) {
   let b = {};
@@ -45,6 +55,9 @@ function validBilling(body) {
     ext_mode: oneOf(body.ext_mode, ['coefficient', 'equal'], { label: 'Reparto', fallback: 'coefficient' }),
     ext_installments: Math.round(n(body.ext_installments, { min: 1, max: 24, label: 'Cuotas' }, 1)),
     note: str(body.note, { max: 600, label: 'Nota' }) || '',
+    concepts: Array.isArray(body.concepts)
+      ? OPTIONAL_CONCEPTS.filter((k) => body.concepts.includes(k))
+      : BILLING_DEFAULTS.concepts,
   };
 }
 
@@ -97,10 +110,17 @@ async function pendingByUnit(c, { propertyId, unitId, onlyDebt }) {
 export function routes(r) {
   // ---------- configuración (Ajustes) ----------
 
-  r.get('/api/admin/billing', 'tenant', async (c) => json({ billing: await getBilling(c), defaults: BILLING_DEFAULTS }));
+  // pending: saldo sin pagar por concepto (un concepto desactivado con saldo se sigue mostrando para que los totales cuadren).
+  r.get('/api/admin/billing', 'tenant', async (c) => {
+    const rows = await tenantDb(c).all(
+      'SELECT concept, SUM(amount) AS amount FROM charges WHERE business_id = ? AND paid_at IS NULL GROUP BY concept', c.businessId,
+    );
+    return json({ billing: await getBilling(c), defaults: BILLING_DEFAULTS, concepts: CONCEPTS, pending: Object.fromEntries(rows.map((r) => [r.concept, r.amount])) });
+  });
 
   r.put('/api/admin/billing', 'manager', async (c) => {
-    const billing = validBilling(await readJson(c.req));
+    // Lo que no venga en el cuerpo conserva lo guardado (la tasa de interés que escogió la persona, etc.).
+    const billing = validBilling({ ...(await getBilling(c)), ...(await readJson(c.req)) });
     await tenantDb(c).run(`UPDATE businesses SET billing = ?, updated_at = datetime('now') WHERE id = ? /* business_id */`, JSON.stringify(billing), c.businessId);
     return json({ ok: true, billing });
   });
@@ -254,6 +274,7 @@ export function routes(r) {
   r.post('/api/admin/charges/interest', 'manager', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
+    assertConcept(billing, 'int');
     const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
     const rate = num(body.rate, { min: 0.01, max: 10, label: 'Tasa' }) ?? billing.interest_rate;
     if (!rate) throw new HttpError(400, 'Configura la tasa de interés en Ajustes');
@@ -281,6 +302,7 @@ export function routes(r) {
   r.post('/api/admin/charges/legal', 'manager', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
+    assertConcept(billing, 'jur');
     const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
     const pct = num(body.pct, { min: 0.1, max: 50, label: 'Porcentaje' }) ?? billing.legal_pct;
     const days = Math.round(num(body.days, { min: 1, max: 720, label: 'Días' }) ?? billing.legal_days);
@@ -308,6 +330,7 @@ export function routes(r) {
   r.post('/api/admin/charges/retro', 'manager', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
+    assertConcept(billing, 'rtc');
     const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
     const from = period(body.from, 'Desde');
     const to = period(body.to, 'Hasta');
@@ -334,6 +357,7 @@ export function routes(r) {
   r.post('/api/admin/charges/extra', 'manager', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
+    assertConcept(billing, 'ext');
     const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
     const total = num(body.total, { min: 1, max: 1e12, label: 'Valor total' });
     if (!total) throw new HttpError(400, 'Valor total es obligatorio');

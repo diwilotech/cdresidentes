@@ -3,6 +3,7 @@ import { json, readJson, str, num, oneOf, date, HttpError } from '../lib/http.js
 import { tenantDb, uuid } from '../lib/db.js';
 import { pick, insertRow, updateRow, deleteRow, getRow } from '../lib/crud.js';
 import { today } from '../lib/time.js';
+import { getBilling, assertConcept } from './billing.js';
 
 export const CONCEPTS = {
   admin: 'Cuota de administración',
@@ -100,7 +101,9 @@ export function routes(r) {
   });
 
   r.post('/api/admin/charges', 'tenant', async (c) => {
-    const id = await insertRow(c, 'charges', pick(await readJson(c.req), FIELDS));
+    const data = pick(await readJson(c.req), FIELDS);
+    assertConcept(await getBilling(c), data.concept);
+    const id = await insertRow(c, 'charges', data);
     return json({ id }, 201);
   });
 

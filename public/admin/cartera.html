@@ -103,14 +103,18 @@
       const { esc, money, moneyShort, unitLabel } = App;
       const $ = (id) => document.getElementById(id);
       if (!App.canManage()) document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
-      $('concept').innerHTML += Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+      // Conceptos de Ajustes: SHOWN = activos + desactivados con saldo; ACTIVE = los que se pueden usar en cobros nuevos.
+      const SHOWN = await App.shownConcepts();
+      const ACTIVE = await App.activeConcepts();
+      const on = (k) => SHOWN.includes(k);
+      $('concept').innerHTML += SHOWN.map((k) => `<option value="${k}">${App.CONCEPTS[k]}</option>`).join('');
+      document.querySelectorAll('[data-liq]').forEach((b) => { const k = { int: 'int', jur: 'jur', rtc: 'rtc', ext: 'ext' }[b.dataset.liq]; if (k && !ACTIVE.includes(k)) b.closest('li').remove(); });
       const today = App.todayLocal();
       let unit = App.param('unit') || '';
       let tab = unit ? 'moves' : 'units';
       let units = [];
       let moves = [];
-      let billing = null;
-      const getBilling = async () => (billing ||= (await App.api('/billing')).billing);
+      const getBilling = async () => (await App.billingInfo()).billing;
 
       // ---------- resumen ----------
       async function loadSummary() {
@@ -144,24 +148,33 @@
         ['Jurídico (JUR) / Interés (INT)', ['k-jur', 'JUR', 'jur'], ['k-int', 'INT', 'int']],
         ['Parqueadero / Otros', ['k-par', 'PAR', 'parking'], ['k-otr', 'OTR', 'other']],
       ];
-      // get(row, concepto) -> valor. Devuelve: cuota de administración, las 3 columnas apiladas y, solo para la descarga, un concepto por columna.
+      const SHORTK = { rtc: 'RTC', ext: 'EXT', jur: 'JUR', int: 'INT', parking: 'PAR', other: 'OTR' };
+      // get(row, concepto) -> valor. Cuota de administración + los conceptos activos de dos en dos (uno debajo del otro);
+      // si de un par solo queda uno, va en su propia columna; en la descarga, un concepto por columna.
       const conceptCols = (get, adminHtml) => [
         { title: 'Cuota administración', sum: true, priority: 4, value: (r) => get(r, 'admin'), html: adminHtml || ((r) => `<span class="mono fw-semibold ${get(r, 'admin') ? '' : 'text-body-secondary'}">${money(get(r, 'admin'))}</span>`) },
-        ...PAIRS.map(([title, a, b], i) => ({
-          title, className: 'stack-cell', priority: 5 + i, noExport: true, value: (r) => get(r, a[2]) + get(r, b[2]),
-          html: (r) => line(a[0], a[1], get(r, a[2])) + line(b[0], b[1], get(r, b[2])),
-        })),
-        ...['rtc', 'ext', 'jur', 'int', 'parking', 'other'].map((k) => ({ title: App.CONCEPTS[k], exportOnly: true, sum: true, value: (r) => get(r, k) })),
+        ...PAIRS.flatMap(([title, a, b], i) => {
+          const keys = [a, b].filter((x) => on(x[2]));
+          if (keys.length === 2) {
+            return [{ title, className: 'stack-cell', priority: 5 + i, noExport: true, pair: keys, value: (r) => get(r, a[2]) + get(r, b[2]),
+              html: (r) => line(a[0], a[1], get(r, a[2])) + line(b[0], b[1], get(r, b[2])) }];
+          }
+          return keys.map(([cls, short, k]) => ({ title: `${App.CONCEPTS[k]} (${short})`, sum: true, priority: 5 + i, value: (r) => get(r, k),
+            html: (r) => `<span class="mono ${get(r, k) ? 'fw-semibold' : 'text-body-secondary'}">${money(get(r, k))}</span>` }));
+        }),
+        ...['rtc', 'ext', 'jur', 'int', 'parking', 'other'].filter(on).map((k) => ({ title: App.CONCEPTS[k], exportOnly: true, sum: true, value: (r) => get(r, k) })),
       ];
-      // Pie de las columnas apiladas (adminCol = índice de la columna "Cuota administración").
-      const pairFooterFor = (get, adminCol) => (api) => {
+      // Pie de las columnas apiladas de una tabla.
+      const pairFooterFor = (get, cols) => (api) => {
         const rows = api.rows({ search: 'applied' }).data().toArray();
         const s = (k) => rows.reduce((t, r) => t + (get(r, k) || 0), 0);
-        PAIRS.forEach(([, a, b], i) => {
-          const f = api.column(adminCol + 1 + i).footer();
-          if (f) f.innerHTML = `<div class="stack-cell">${line(a[0], a[1], s(a[2]))}${line(b[0], b[1], s(b[2]))}</div>`;
+        cols.forEach((c, i) => {
+          if (!c.pair) return;
+          const f = api.column(i).footer();
+          if (f) f.innerHTML = `<div class="stack-cell">${c.pair.map(([cls, short, k]) => line(cls, short, s(k))).join('')}</div>`;
         });
       };
+      const colIndex = (cols, title) => cols.findIndex((c) => c.title === title);
       const UNIT_COLS = [
         { title: 'Unidad', html: (r) => `<div class="fw-semibold">${esc(unitLabel(r))}</div><div class="small text-body-secondary text-truncate" style="max-width:11rem">${esc(r.owner_name || '—')}${App.currentProperty() ? '' : ' · ' + esc(r.property_name)}</div>`,
           value: (r) => `${r.property_name} · ${unitLabel(r)} · ${r.owner_name || ''}` },
@@ -175,13 +188,13 @@
             ${r.total ? `<button class="btn btn-sm btn-ai" data-cobrar="${esc(r.unit_id)}" title="Cobro con IA"><i class="bi bi-stars"></i><span class="d-none d-xxl-inline"> Cobro AI</span></button>
             <button class="btn btn-sm btn-outline-success" data-payall="${esc(r.unit_id)}" title="Registrar pago"><i class="bi bi-cash"></i></button>` : ''}` },
       ];
-      const pairFooter = pairFooterFor(C, 1);
+      const pairFooter = pairFooterFor(C, UNIT_COLS);
 
       async function loadUnits() {
         try {
           const d = await App.api('/charges/by-unit' + App.qs({ all: $('scope').value }));
           units = d.items.map((r) => ({ ...r, id: r.unit_id }));
-          await App.dataTable($('unitsTable'), { columns: UNIT_COLS, data: units, order: [[11, 'desc']], title: 'Estado de cuenta por unidad', onDraw: pairFooter });
+          await App.dataTable($('unitsTable'), { columns: UNIT_COLS, data: units, order: [[colIndex(UNIT_COLS, 'Total adeudado'), 'desc']], title: 'Estado de cuenta por unidad', onDraw: pairFooter });
         } catch (err) { App.fail(err); }
       }
 
@@ -214,20 +227,20 @@
       }
 
       // ---------- cortes mensuales ----------
-      const CK = ['admin', 'rtc', 'ext', 'parking', 'jur', 'int', 'other'];
+      const CK = SHOWN;
       const SHORT = { admin: 'ADM', rtc: 'RTC', ext: 'EXT', parking: 'PAR', jur: 'JUR', int: 'INT', other: 'OTR' };
       const cut = (v, cls = '') => (v ? `<span class="${cls}">${money(v)}</span>` : '<span class="text-body-secondary">—</span>');
       const G = (r, k) => r.charges[k] || 0;
-      const conceptFooter = pairFooterFor(G, 1);
       const cutFooter = (api) => {
-        conceptFooter(api);
+        const cols = api.table().node().id === 'cutUnitsTable' ? CUT_UNIT_COLS : CUT_COLS;
+        pairFooterFor(G, cols)(api);
         const rows = api.rows({ search: 'applied' }).data().toArray();
         const s = (f) => rows.reduce((t, r) => t + r[f], 0);
         // En el historial no se suma el saldo anterior (cada mes arrastra el del mes previo).
         const isUnits = api.table().node().id === 'cutUnitsTable';
-        const f11 = api.column(11).footer();
+        const f11 = api.column(colIndex(cols, 'Anterior / Cargos / Pagos')).footer();
         if (f11) f11.innerHTML = `<div class="stack-cell">${isUnits ? `<div><span class="k">ANT:</span>${money(s('opening'))}</div>` : ''}<div><span class="k">+CARGOS:</span>${money(s('charged'))}</div><div><span class="k text-success">−PAGOS:</span>${money(s('paid'))}</div></div>`;
-        const f15 = api.column(15).footer();
+        const f15 = api.column(colIndex(cols, 'Saldo al corte')).footer();
         if (f15 && s('pending_total')) f15.insertAdjacentHTML('beforeend', `<div class="small text-danger">pendiente ${money(s('pending_total'))}</div>`);
       };
       const CUT_COLS = [
@@ -297,7 +310,7 @@
               return t;
             }, { opening: 0, charged: 0, paid: 0, closing: 0, pending_total: 0, charges: Object.fromEntries(CK.map((c) => [c, 0])) });
             $('cutTotals').innerHTML = totalsHtml(tot, `Totales del corte ${App.fmtMonth(month)} · ${u ? unitLabel(u) : esc(place)} · ${d.items.length} unidades · corte al ${App.fmtDate(lastDay(month))}`);
-            await App.dataTable($('cutUnitsTable'), { columns: CUT_UNIT_COLS, data: d.items.map((r) => ({ ...r, id: r.unit_id })), order: [[15, 'desc']], onDraw: cutFooter,
+            await App.dataTable($('cutUnitsTable'), { columns: CUT_UNIT_COLS, data: d.items.map((r) => ({ ...r, id: r.unit_id })), order: [[colIndex(CUT_UNIT_COLS, 'Saldo al corte'), 'desc']], onDraw: cutFooter,
               title: `Corte ${month} ${u ? u.property_name + ' ' + unitLabel(u) : place}`, pageLength: 50 });
             $('cutUnitsTable')._dt.columns.adjust().responsive.recalc();
           } else {
@@ -384,12 +397,12 @@
         const pid = App.currentProperty() || App.properties[0].id;
         const { form } = App.formDialog({
           title: 'Nuevo cobro',
-          data: { property_id: pid, concept: 'other', due_date: App.addDays(today, 15), period: today.slice(0, 7) },
+          data: { property_id: pid, concept: ACTIVE.includes('other') ? 'other' : ACTIVE.at(-1), due_date: App.addDays(today, 15), period: today.slice(0, 7) },
           fields: `
             <div class="row g-2">
               <div class="col-sm-6"><label class="form-label small">Conjunto</label><select name="property_id" class="form-select">${App.propertyOptions(pid)}</select></div>
               <div class="col-sm-6"><label class="form-label small">Unidad *</label><select name="unit_id" class="form-select" required></select></div>
-              <div class="col-sm-6"><label class="form-label small">Concepto</label><select name="concept" class="form-select">${Object.entries(App.CONCEPTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+              <div class="col-sm-6"><label class="form-label small">Concepto</label><select name="concept" class="form-select">${ACTIVE.map((k) => `<option value="${k}">${App.CONCEPTS[k]}</option>`).join('')}</select></div>
               <div class="col-sm-6"><label class="form-label small">Periodo</label><input name="period" type="month" class="form-control"></div>
               <div class="col-12"><label class="form-label small">Descripción</label><input name="description" class="form-control" maxlength="200" placeholder="Daño en zona común, multa por convivencia…"></div>
               <div class="col-sm-6"><label class="form-label small">Valor (COP) *</label><input name="amount" type="number" min="1" step="1" class="form-control" required></div>

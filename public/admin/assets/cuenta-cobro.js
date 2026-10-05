@@ -34,8 +34,12 @@ const CuentaCobro = (() => {
 
   // Cortes por mes: una fila por mes de vencimiento y una columna por concepto, con lo pendiente de cada corte.
   // Más de 7 meses: los más antiguos se agrupan en "Anteriores" para que quepa en media carta.
+  // Conceptos de la cuenta: los activos en Ajustes + los que esta unidad tenga con saldo (para que el total cuadre).
+  const keysFor = (data, st) => ORDER.filter((k) => k === 'admin' || (data.billing.concepts || ORDER).includes(k) || st.concepts[k] > 0);
+
   function cutsTable(data, st) {
     const t = data.issued;
+    const KEYS = keysFor(data, st);
     const num = (n) => (n ? Math.round(n).toLocaleString('es-CO') : '—');
     let groups = [...new Set(st.items.map((i) => i.due_date.slice(0, 7)))].sort().map((m) => ({ label: fper(m), keys: [m] }));
     if (groups.length > 7) {
@@ -45,19 +49,19 @@ const CuentaCobro = (() => {
     const sum = (keys, k) => st.items.filter((i) => keys.includes(i.due_date.slice(0, 7)) && (!k || i.concept === k)).reduce((s, i) => s + i.amount, 0);
     const overdue = (keys) => st.items.some((i) => keys.includes(i.due_date.slice(0, 7)) && i.due_date < t);
     const body = [
-      [{ text: 'Corte (mes)', style: 'th' }, ...ORDER.map((k) => ({ text: SHORT[k], style: 'th', alignment: 'right' })), { text: 'Total', style: 'th', alignment: 'right' }],
+      [{ text: 'Corte (mes)', style: 'th' }, ...KEYS.map((k) => ({ text: SHORT[k], style: 'th', alignment: 'right' })), { text: 'Total', style: 'th', alignment: 'right' }],
       ...(groups.length ? groups.map((g) => [
         { text: [g.label, overdue(g.keys) ? { text: '  vencido', color: '#B91C1C', fontSize: 6.5 } : { text: '  por vencer', color: MUTED, fontSize: 6.5 }] },
-        ...ORDER.map((k) => { const v = sum(g.keys, k); return { text: num(v), alignment: 'right', color: v ? INK : '#9CA3AF' }; }),
+        ...KEYS.map((k) => { const v = sum(g.keys, k); return { text: num(v), alignment: 'right', color: v ? INK : '#9CA3AF' }; }),
         { text: num(sum(g.keys)), alignment: 'right', bold: true },
-      ]) : [[{ text: 'Sin saldos pendientes: paz y salvo', colSpan: ORDER.length + 2, color: ACCENT, alignment: 'center' }, ...ORDER.map(() => ({})), {}]]),
-      [{ text: 'TOTAL', bold: true, fillColor: '#ECFDF5' }, ...ORDER.map((k) => ({ text: num(st.concepts[k] || 0), alignment: 'right', bold: true, fillColor: '#ECFDF5' })),
+      ]) : [[{ text: 'Sin saldos pendientes: paz y salvo', colSpan: KEYS.length + 2, color: ACCENT, alignment: 'center' }, ...KEYS.map(() => ({})), {}]]),
+      [{ text: 'TOTAL', bold: true, fillColor: '#ECFDF5' }, ...KEYS.map((k) => ({ text: num(st.concepts[k] || 0), alignment: 'right', bold: true, fillColor: '#ECFDF5' })),
         { text: num(st.total), alignment: 'right', bold: true, fillColor: '#ECFDF5' }],
-      [{ text: [{ text: 'TOTAL A PAGAR', bold: true }, { text: `   Vencido ${money(st.overdue)}  ·  Por vencer ${money(st.total - st.overdue)}`, color: MUTED, fontSize: 7 }], colSpan: ORDER.length + 1 },
-        ...ORDER.map(() => ({})), { text: money(st.total), bold: true, fontSize: 11, alignment: 'right', color: st.total ? INK : ACCENT }],
+      [{ text: [{ text: 'TOTAL A PAGAR', bold: true }, { text: `   Vencido ${money(st.overdue)}  ·  Por vencer ${money(st.total - st.overdue)}`, color: MUTED, fontSize: 7 }], colSpan: KEYS.length + 1 },
+        ...KEYS.map(() => ({})), { text: money(st.total), bold: true, fontSize: 11, alignment: 'right', color: st.total ? INK : ACCENT }],
     ];
     return {
-      table: { headerRows: 1, widths: [84, ...ORDER.map(() => '*'), 66], body },
+      table: { headerRows: 1, widths: [84, ...KEYS.map(() => '*'), 66], body },
       layout: { hLineColor: () => LINE, vLineWidth: () => 0, hLineWidth: (i, node) => (i === 1 || i >= node.table.body.length - 2 ? 1 : 0.4), paddingTop: () => 2.2, paddingBottom: () => 2.2, paddingLeft: () => 3, paddingRight: () => 3 },
       fontSize: 7.5,
     };
@@ -116,7 +120,7 @@ const CuentaCobro = (() => {
           fontSize: 8,
         },
         cutsTable(data, st),
-        { text: ORDER.map((k) => `${SHORT[k]} ${data.concepts[k]}`).join('  ·  '), fontSize: 6, color: MUTED, margin: [0, 2, 0, 0] },
+        { text: keysFor(data, st).map((k) => `${SHORT[k]} ${data.concepts[k]}`).join('  ·  '), fontSize: 6, color: MUTED, margin: [0, 2, 0, 0] },
         {
           margin: [0, 6, 0, 0],
           columns: [
@@ -125,7 +129,7 @@ const CuentaCobro = (() => {
               stack: [
                 p.payment_info ? { text: [{ text: 'Forma de pago: ', bold: true }, p.payment_info], fontSize: 7.5 } : { text: 'Pague en la administración o por los medios autorizados por el conjunto.', fontSize: 7.5, color: MUTED },
                 data.billing.note ? { text: data.billing.note, fontSize: 7, color: MUTED, margin: [0, 2, 0, 0] } : '',
-                { text: `Después de la fecha límite se liquidan intereses de mora (${String(data.billing.interest_rate).replace('.', ',')} % mensual). Si ya pagó, omita esta cuenta.`, fontSize: 6.5, color: MUTED, margin: [0, 2, 0, 0] },
+                { text: `${(data.billing.concepts || ORDER).includes('int') ? `Después de la fecha límite se liquidan intereses de mora (${String(data.billing.interest_rate).replace('.', ',')} % mensual). ` : ''}Si ya pagó, omita esta cuenta.`, fontSize: 6.5, color: MUTED, margin: [0, 2, 0, 0] },
               ],
             },
             label ? { width: 'auto', text: label, fontSize: 7, bold: true, color: ACCENT, alignment: 'right', margin: [8, 0, 0, 0] } : { width: 0, text: '' },

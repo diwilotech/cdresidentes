@@ -412,6 +412,22 @@ const App = (() => {
     return fill().catch(fail);
   }
 
+  // ---------- conceptos de cartera activos (Ajustes) ----------
+  // Orden de la cuenta de cobro. La cuota de administración siempre está; las demás se activan en Ajustes.
+  const CONCEPT_ORDER = ['admin', 'rtc', 'ext', 'parking', 'jur', 'int', 'other'];
+  let billingReq;
+  const billingInfo = () => (billingReq ||= api('/billing'));
+  // Conceptos a mostrar: los activos + los desactivados que aún tienen saldo pendiente (para que los totales cuadren).
+  async function shownConcepts() {
+    const { billing, pending } = await billingInfo();
+    return CONCEPT_ORDER.filter((k) => k === 'admin' || billing.concepts.includes(k) || pending[k] > 0);
+  }
+  // Conceptos que se pueden usar en cobros nuevos y liquidaciones.
+  async function activeConcepts() {
+    const { billing } = await billingInfo();
+    return CONCEPT_ORDER.filter((k) => k === 'admin' || billing.concepts.includes(k));
+  }
+
   // ---------- librerías bajo demanda ----------
 
   const CDN = 'https://cdn.jsdelivr.net/npm/';
@@ -764,7 +780,7 @@ const App = (() => {
   const canManage = () => ['owner', 'admin'].includes(me?.session?.role);
 
   return {
-    api, qs, init, link, go, clearShell, toast, dataTable, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
+    api, qs, init, link, go, clearShell, toast, dataTable, billingInfo, shownConcepts, activeConcepts, CONCEPT_ORDER, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
     onSubmit, formData, fillForm, confirmAction, param, badge, canManage,
     fmtDate, fmtTime, fmtDateTime, fmtMonth, fmtNum, money, moneyShort, unitLabel, initials, daysSince, todayLocal, addDays,
     currentProperty, setProperty, onProperty, propertyOptions, propertyName,

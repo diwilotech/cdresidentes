@@ -57,6 +57,10 @@
             <button class="btn btn-sm btn-outline-secondary" id="preview" type="button"><i class="bi bi-eye me-1"></i>Vista previa del PDF</button></div>
           <div class="card-body">
             <form id="billForm" novalidate>
+              <div class="eyebrow mb-2">Conceptos que usa la administración</div>
+              <p class="small text-body-secondary mb-2">La cuota de administración siempre está. Activa solo lo que cobras: lo que desactives deja de aparecer en Cartera, Liquidar, Nuevo cobro, Cortes y la cuenta de cobro.</p>
+              <div class="d-flex flex-wrap gap-2 mb-1" id="conceptChecks"></div>
+              <p class="small text-warning mb-3 d-none" id="conceptWarn"></p>
               <div class="eyebrow mb-2">Formato de la cuenta de cobro (PDF)</div>
               <div class="row g-2 mb-3">
                 <div class="col-md-4"><label class="card p-3 h-100 mb-0" style="cursor:pointer"><div class="form-check mb-1"><input class="form-check-input" type="radio" name="format" value="half" id="fHalf"><span class="fw-semibold">Media carta</span></div>
@@ -68,13 +72,13 @@
               </div>
               <div class="row g-3">
                 <div class="col-6 col-md-3"><label class="form-label small">Día de vencimiento de la cuota</label><input name="due_day" type="number" min="1" max="28" class="form-control"></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Interés de mora (INT) % mensual</label><input name="interest_rate" type="number" step="0.01" min="0" max="10" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label small">Intereses sobre</label><select name="interest_base" class="form-select"><option value="admin">Solo cuotas de administración vencidas</option><option value="all">Todo lo vencido (sin intereses ni jurídico)</option></select></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Cobro jurídico (JUR) % honorarios</label><input name="legal_pct" type="number" step="0.1" min="0" max="50" class="form-control"></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Pasa a jurídico desde (días de mora)</label><input name="legal_days" type="number" min="30" max="720" class="form-control"></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Retroactivo (RTC) % de incremento</label><input name="retro_pct" type="number" step="0.01" min="0" max="100" class="form-control"></div>
-                <div class="col-6 col-md-3"><label class="form-label small">Extraordinaria (EXT): cuotas</label><input name="ext_installments" type="number" min="1" max="24" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label small">Extraordinaria (EXT): reparto</label><select name="ext_mode" class="form-select"><option value="coefficient">Por coeficiente de copropiedad</option><option value="equal">Partes iguales</option></select></div>
+                <div data-concept="int" class="col-6 col-md-3"><label class="form-label small">Interés de mora (INT) % mensual</label><input name="interest_rate" type="number" step="0.01" min="0" max="10" class="form-control"></div>
+                <div data-concept="int" class="col-md-6"><label class="form-label small">Intereses sobre</label><select name="interest_base" class="form-select"><option value="admin">Solo cuotas de administración vencidas</option><option value="all">Todo lo vencido (sin intereses ni jurídico)</option></select></div>
+                <div data-concept="jur" class="col-6 col-md-3"><label class="form-label small">Cobro jurídico (JUR) % honorarios</label><input name="legal_pct" type="number" step="0.1" min="0" max="50" class="form-control"></div>
+                <div data-concept="jur" class="col-6 col-md-3"><label class="form-label small">Pasa a jurídico desde (días de mora)</label><input name="legal_days" type="number" min="30" max="720" class="form-control"></div>
+                <div data-concept="rtc" class="col-6 col-md-3"><label class="form-label small">Retroactivo (RTC) % de incremento</label><input name="retro_pct" type="number" step="0.01" min="0" max="100" class="form-control"></div>
+                <div data-concept="ext" class="col-6 col-md-3"><label class="form-label small">Extraordinaria (EXT): cuotas</label><input name="ext_installments" type="number" min="1" max="24" class="form-control"></div>
+                <div data-concept="ext" class="col-md-6"><label class="form-label small">Extraordinaria (EXT): reparto</label><select name="ext_mode" class="form-select"><option value="coefficient">Por coeficiente de copropiedad</option><option value="equal">Partes iguales</option></select></div>
                 <div class="col-md-6"><label class="form-label small">Nota al pie de la cuenta de cobro</label><input name="note" class="form-control" maxlength="600" placeholder="Ej. Descuento del 5% por pronto pago antes del día 5"></div>
               </div>
               <p class="small text-body-secondary mt-3 mb-3">La cuenta bancaria y la forma de pago van en cada conjunto (Conjuntos → editar). La tasa de interés no debe superar la máxima legal vigente.</p>
@@ -170,12 +174,37 @@
         } catch (err) { App.fail(err); }
       });
 
+      const OPTIONAL = [['rtc', 'Retroactivo (RTC)'], ['ext', 'Cuota extraordinaria (EXT)'], ['jur', 'Cobranza jurídica (JUR)'], ['int', 'Intereses de mora (INT)'], ['parking', 'Parqueadero (PAR)'], ['other', 'Otros (OTR)']];
+      let pendingByConcept = {};
+      $('conceptChecks').innerHTML = `<label class="btn btn-sm btn-outline-secondary disabled opacity-100"><input type="checkbox" class="form-check-input me-1" checked disabled>Cuota de administración (ADM)</label>` +
+        OPTIONAL.map(([k, label]) => `<label class="btn btn-sm btn-outline-secondary"><input type="checkbox" class="form-check-input me-1" name="c_${k}">${label}</label>`).join('');
+      // Los campos de cada concepto solo se muestran si el concepto está activo.
+      function syncConcepts() {
+        const f = $('billForm');
+        const off = [];
+        for (const [k, label] of OPTIONAL) {
+          const enabled = f.elements[`c_${k}`].checked;
+          f.querySelectorAll(`[data-concept="${k}"]`).forEach((el) => el.classList.toggle('d-none', !enabled));
+          if (!enabled && pendingByConcept[k] > 0) off.push(`${label} (${App.money(pendingByConcept[k])})`);
+        }
+        $('conceptWarn').classList.toggle('d-none', !off.length);
+        $('conceptWarn').textContent = off.length ? `Con saldo pendiente: ${off.join(', ')}. Se seguirán mostrando hasta que se paguen o se eliminen, para que los totales cuadren.` : '';
+      }
+      $('conceptChecks').addEventListener('change', syncConcepts);
+
       async function loadBilling() {
         const { billing } = await App.api('/billing');
-        App.fillForm($('billForm'), billing);
+        App.fillForm($('billForm'), { ...billing, ...Object.fromEntries(OPTIONAL.map(([k]) => [`c_${k}`, billing.concepts.includes(k)])) });
+        pendingByConcept = (await App.billingInfo()).pending || {};
+        syncConcepts();
         if (!manage) $('billForm').querySelectorAll('input,select').forEach((i) => (i.disabled = true));
       }
-      App.onSubmit($('billForm'), async (d) => { await App.api('/billing', { method: 'PUT', body: d }); App.toast('Configuración de cartera guardada'); });
+      App.onSubmit($('billForm'), async (d) => {
+        const concepts = OPTIONAL.map(([k]) => k).filter((k) => d[`c_${k}`]);
+        await App.api('/billing', { method: 'PUT', body: { ...d, concepts } });
+        App.clearShell();
+        App.toast('Configuración de cartera guardada');
+      });
       // Vista previa con la unidad de mayor saldo, en el formato elegido (sin guardar).
       $('preview').addEventListener('click', async () => {
         try {
