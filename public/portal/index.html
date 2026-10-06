@@ -66,7 +66,7 @@
       const $ = (id) => document.getElementById(id);
       const CAT = { mantenimiento: 'warning', seguridad: 'danger', servicios: 'info', asamblea: 'primary', convivencia: 'success', finanzas: 'secondary', general: 'secondary' };
       const STATUS = { pending: ['Por aprobar', 'warning'], approved: ['Aprobada', 'success'] };
-      $('hello').textContent = `Hola, ${(me.user.name || me.user.email).split(' ')[0]}`;
+      $('hello').textContent = `Hola, ${(me.user.name || me.user.email || 'vecino').split(' ')[0]}`;
 
       const kpi = (icon, cls, label, value, extra = '') => `
         <div class="col-6 col-xl-3"><div class="card kpi"><div class="d-flex justify-content-between gap-2">

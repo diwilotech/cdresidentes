@@ -2,7 +2,12 @@
 // datos de la unidad y del conjunto, registro de mascotas y reservas de zonas comunes.
 // Nivel 'resident': c.units trae solo las unidades vinculadas a la persona; todo se filtra por ellas.
 import { json, readJson, str, num, oneOf, date, HttpError } from '../lib/http.js';
-import { tenantDb, globalDb } from '../lib/db.js';
+import { tenantDb, globalDb, nowIso } from '../lib/db.js';
+import {
+  normalizeDoc, createPortalSession, portalCookie, loadPortalSession, destroyPortalSession,
+  loadSession, destroySession, sessionCookie, timingSafeEqualHex, sha256Hex,
+} from '../lib/auth.js';
+import { businessBySlug } from '../lib/tenant.js';
 import { pick, insertRow, updateRow, deleteRow, getRow } from '../lib/crud.js';
 import { today } from '../lib/time.js';
 import { CONCEPTS } from './charges.js';
@@ -50,7 +55,75 @@ async function myPet(c, id) {
   return pet;
 }
 
+const MAX_FAILS = 5;
+const LOCK_MINUTES = 15;
+const isoIn = (ms) => new Date(Date.now() + ms).toISOString().slice(0, 19).replace('T', ' ');
+
+async function activeBusiness(c) {
+  const b = await businessBySlug(c.env, c.params.slug);
+  if (!b || b.status !== 'active') throw new HttpError(404, 'No encontramos esta administración.');
+  return b;
+}
+
 export function routes(r) {
+  // ---------- ingreso con apartamento + cédula (público) ----------
+
+  // Conjuntos y unidades para elegir el apartamento (sin nombres ni datos personales).
+  r.get('/api/public/portal/:slug/units', 'public', async (c) => {
+    const b = await activeBusiness(c);
+    const db = globalDb(c.env);
+    const [properties, units] = await Promise.all([
+      db.all("SELECT id, name FROM properties WHERE business_id = ? AND status = 'active' ORDER BY name", b.id),
+      db.all(
+        `SELECT u.id, u.property_id, u.tower, u.number, u.kind FROM units u JOIN properties p ON p.id = u.property_id
+          WHERE u.business_id = ? AND p.status = 'active' ORDER BY u.tower, CAST(u.number AS INTEGER), u.number`,
+        b.id,
+      ),
+    ]);
+    return json({ business: { name: b.name, logo: brandUrl(b.logo_key) }, properties, units });
+  });
+
+  r.post('/api/public/portal/:slug/login', 'public', async (c) => {
+    const b = await activeBusiness(c);
+    const body = await readJson(c.req);
+    const db = globalDb(c.env);
+    const unit = await db.first('SELECT id, owner_doc FROM units WHERE business_id = ? AND id = ?', b.id, String(body.unit_id || ''));
+    if (!unit) throw new HttpError(400, 'Elige tu apartamento');
+    const doc = normalizeDoc(body.doc);
+    if (!doc) throw new HttpError(400, 'Escribe la cédula del propietario');
+    if (!normalizeDoc(unit.owner_doc)) {
+      throw new HttpError(400, 'Esta unidad no tiene la cédula del propietario registrada. Pídele a la administración que la registre.', 'NO_DOC');
+    }
+    const att = await db.first('SELECT fails, locked_until FROM portal_logins WHERE unit_id = ?', unit.id);
+    if (att?.locked_until && att.locked_until > nowIso()) {
+      throw new HttpError(429, 'Demasiados intentos con esta unidad. Intenta de nuevo en unos minutos.', 'LOCKED');
+    }
+    if (!timingSafeEqualHex(await sha256Hex(doc), await sha256Hex(normalizeDoc(unit.owner_doc)))) {
+      const fails = (att?.fails || 0) + 1;
+      const lock = fails >= MAX_FAILS ? isoIn(LOCK_MINUTES * 60 * 1000) : null;
+      await db.run(
+        `INSERT INTO portal_logins (unit_id, business_id, fails, locked_until) VALUES (?, ?, ?, ?)
+         ON CONFLICT (unit_id) DO UPDATE SET fails = excluded.fails, locked_until = excluded.locked_until`,
+        unit.id, b.id, lock ? 0 : fails, lock,
+      );
+      throw new HttpError(401, lock ? 'Cédula incorrecta. La unidad quedó bloqueada 15 minutos.' : 'La cédula no coincide con la del propietario de esta unidad', 'BAD_LOGIN');
+    }
+    if (att) await db.run('DELETE FROM portal_logins WHERE unit_id = ?', unit.id);
+    const token = await createPortalSession(c.env, b.id, unit.id, doc);
+    return json({ ok: true }, 200, { 'set-cookie': portalCookie(token, c.req) });
+  });
+
+  // Cierra la sesión del portal (cédula y, si la hay, la de correo).
+  r.post('/api/public/portal/logout', 'public', async (c) => {
+    const [ps, s] = await Promise.all([loadPortalSession(c.req, c.env), loadSession(c.req, c.env)]);
+    if (ps) await destroyPortalSession(c.env, ps.session_id);
+    if (s) await destroySession(c.env, s.session_id);
+    const res = json({ ok: true });
+    res.headers.append('set-cookie', portalCookie(null, c.req));
+    if (s) res.headers.append('set-cookie', sessionCookie(null, c.req));
+    return res;
+  });
+
   // Sesión del portal: persona, administración y sus unidades.
   r.get('/api/portal/me', 'resident', async (c) => {
     const db = tenantDb(c);
@@ -80,6 +153,7 @@ export function routes(r) {
       billing: { concepts: billing.concepts, due_day: billing.due_day, interest_rate: billing.interest_rate },
       portals,
       isStaff: !!member,
+      login: c.portalSession ? 'doc' : 'user',
       readOnly: !!c.business.paid_until && c.business.paid_until < today(),
     });
   });

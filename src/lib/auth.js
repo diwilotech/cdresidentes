@@ -191,11 +191,11 @@ async function authenticatePlatform(c) {
 export async function authenticate(c, level) {
   if (level === 'public') return;
   if (level === 'platform') return authenticatePlatform(c);
+  if (level === 'resident') return authenticateResident(c);
   const s = await loadSession(c.req, c.env);
   if (!s) throw new HttpError(401, 'Inicia sesión', 'NO_SESSION');
   c.session = s;
   c.user = { id: s.user_id, email: s.email, name: s.name };
-  if (level === 'resident') return authenticateResident(c);
 
   // El panel vive en /<slug>/admin y envía el negocio en x-business: manda sobre el de la sesión.
   // (en GET también por ?b=<slug>, para enlaces que se abren en otra pestaña, p. ej. archivos)
@@ -229,6 +229,49 @@ export async function authenticate(c, level) {
   }
 }
 
+// ---------- portal de propietarios ----------
+// Dos formas de entrar a /<slug>/portal:
+//   1. apartamento + cédula del propietario -> cookie cdr_portal (tabla portal_sessions), sin usuario
+//   2. usuario con correo y contraseña vinculado a unidades (tabla residents)
+
+export const PORTAL_COOKIE = 'cdr_portal';
+// Cédula comparable: solo letras y números ("1.020.304-5" = "10203045").
+export const normalizeDoc = (v) => String(v || '').replace(/[^0-9a-z]/gi, '').toUpperCase();
+
+export async function createPortalSession(env, businessId, unitId, doc) {
+  const token = randomHex(32);
+  await globalDb(env).run(
+    'INSERT INTO portal_sessions (id, business_id, unit_id, doc_hash, expires_at) VALUES (?, ?, ?, ?, ?)',
+    await sha256Hex(token), businessId, unitId, await sha256Hex(normalizeDoc(doc)), isoIn(SESSION_HOURS * 3600 * 1000),
+  );
+  return token;
+}
+
+export function portalCookie(token, req) {
+  const secure = new URL(req.url).protocol === 'https:' ? '; Secure' : '';
+  return `${PORTAL_COOKIE}=${token || ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${token ? SESSION_HOURS * 3600 : 0}${secure}`;
+}
+
+// Sesión de cédula vigente (opcionalmente de un negocio).
+export async function loadPortalSession(req, env, businessId = null) {
+  const token = getCookie(req, PORTAL_COOKIE);
+  if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
+  const row = await globalDb(env).first(
+    `SELECT ps.id AS session_id, ps.business_id, ps.unit_id, ps.doc_hash, u.owner_doc, u.owner_name
+       FROM portal_sessions ps JOIN units u ON u.id = ps.unit_id
+      WHERE ps.id = ? AND ps.expires_at > ?`,
+    await sha256Hex(token), nowIso(),
+  );
+  if (!row || (businessId && row.business_id !== businessId)) return null;
+  // La cédula de la unidad cambió desde el ingreso: la sesión ya no vale.
+  if (!timingSafeEqualHex(row.doc_hash, await sha256Hex(normalizeDoc(row.owner_doc)))) return null;
+  return row;
+}
+
+export async function destroyPortalSession(env, sessionId) {
+  await globalDb(env).run('DELETE FROM portal_sessions WHERE id = ?', sessionId);
+}
+
 // Portal: el negocio sale de la ruta (/<slug>/portal -> x-business) y la persona solo ve sus unidades.
 async function authenticateResident(c) {
   const slug = c.req.headers.get('x-business') || (c.req.method === 'GET' && c.url?.searchParams.get('b')) || null;
@@ -236,12 +279,33 @@ async function authenticateResident(c) {
   const db = globalDb(c.env);
   const b = await db.first('SELECT id, name, slug, status, timezone, paid_until, logo_key FROM businesses WHERE slug = ?', slug);
   if (!b || b.status !== 'active') throw new HttpError(404, 'Administración no encontrada', 'NO_BUSINESS');
-  const units = await db.all(
-    `SELECT r.unit_id, r.relation, u.property_id FROM residents r JOIN units u ON u.id = r.unit_id
-      WHERE r.user_id = ? AND r.business_id = ?`,
-    c.user.id, b.id,
-  );
-  if (!units.length) throw new HttpError(403, 'Tu usuario no está vinculado a ninguna unidad de esta administración', 'NOT_RESIDENT');
+
+  let units;
+  const ps = await loadPortalSession(c.req, c.env, b.id);
+  if (ps) {
+    // Con cédula: la unidad del ingreso + las demás del negocio con la misma cédula del propietario.
+    const doc = normalizeDoc(ps.owner_doc);
+    if (!doc) throw new HttpError(401, 'La cédula de la unidad cambió. Ingresa de nuevo.', 'NO_SESSION');
+    const all = await db.all(
+      "SELECT id AS unit_id, property_id, owner_doc FROM units WHERE business_id = ? AND owner_doc IS NOT NULL AND owner_doc <> ''",
+      b.id,
+    );
+    units = all.filter((u) => normalizeDoc(u.owner_doc) === doc).map(({ unit_id, property_id }) => ({ unit_id, property_id, relation: 'owner' }));
+    if (!units.some((u) => u.unit_id === ps.unit_id)) throw new HttpError(401, 'La cédula de la unidad cambió. Ingresa de nuevo.', 'NO_SESSION');
+    c.user = { id: null, email: null, name: ps.owner_name };
+    c.portalSession = ps;
+  } else {
+    const s = await loadSession(c.req, c.env);
+    if (!s) throw new HttpError(401, 'Ingresa con tu apartamento y cédula', 'NO_SESSION');
+    c.session = s;
+    c.user = { id: s.user_id, email: s.email, name: s.name };
+    units = await db.all(
+      `SELECT r.unit_id, r.relation, u.property_id FROM residents r JOIN units u ON u.id = r.unit_id
+        WHERE r.user_id = ? AND r.business_id = ?`,
+      c.user.id, b.id,
+    );
+    if (!units.length) throw new HttpError(403, 'Tu usuario no está vinculado a ninguna unidad de esta administración', 'NOT_RESIDENT');
+  }
   assertWritable(c, b.paid_until);
   c.business = b;
   c.businessId = b.id;

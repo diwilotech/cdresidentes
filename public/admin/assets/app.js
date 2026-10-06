@@ -10,7 +10,8 @@ const App = (() => {
   const BASE = SLUG ? `/${SLUG}/admin` : '/admin';
   // Login: el del negocio (/<slug>/admin/login) o el genérico en la raíz "/".
   const LOGIN = SLUG ? `${BASE}/login` : '/';
-  const onLogin = () => location.pathname === '/' || location.pathname.startsWith(`${BASE}/login`);
+  const PORTAL_LOGIN = `/${SLUG}/portal/login`;
+  const onLogin = () => location.pathname === '/' || location.pathname.startsWith(`${BASE}/login`) || (PORTAL && location.pathname.startsWith(PORTAL_LOGIN));
   // Enlaces del panel con el negocio en la ruta: /admin/x -> /<slug>/admin/x (sin el 302 del servidor en cada clic).
   const link = (path) => (SLUG && /^\/(admin|portal)(\/|$|\?)/.test(path) && !path.startsWith('/admin/assets/') ? `/${SLUG}${path}` : path);
   const go = (path) => { location.href = link(path); };
@@ -167,13 +168,19 @@ const App = (() => {
     progress(1);
     let res, data;
     try {
-      res = await fetch((path.startsWith('/auth/') ? '/api/admin' : API) + path, { method, headers, body: payload, credentials: 'same-origin' });
+      const base = path.startsWith('/public/') ? '/api' : path.startsWith('/auth/') ? '/api/admin' : API;
+      res = await fetch(base + path, { method, headers, body: payload, credentials: 'same-origin' });
       data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
     } finally {
       progress(-1);
     }
     if (!res.ok) {
       if (['NO_SESSION', 'NOT_MEMBER', 'NO_BUSINESS'].includes(data?.code)) shellCache.set(null);
+      // Portal: sin sesión (o sin unidades) vuelve al ingreso con apartamento y cédula.
+      if (PORTAL && ['NO_SESSION', 'NOT_RESIDENT'].includes(data?.code) && !onLogin()) {
+        location.href = `${PORTAL_LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
+        return new Promise(() => {});
+      }
       if (data?.code === 'NO_SESSION' && !onLogin()) {
         location.href = `${LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
         return new Promise(() => {});
@@ -823,7 +830,7 @@ const App = (() => {
       ${me.isStaff ? `<div class="side-label">Administración</div><a class="side-link" href="${link('/admin/')}"><i class="bi bi-speedometer2"></i><span>Ir al panel</span></a>` : ''}
       <div class="side-foot">
         <div class="small fw-semibold text-truncate">${esc(u ? `${u.label} · ${u.property_name}` : '')}</div>
-        <div class="small text-body-secondary text-truncate">${esc(me.user.name || me.user.email)} · ${esc(RELATION[u?.relation] || '')}</div>
+        <div class="small text-body-secondary text-truncate">${esc(me.user.name || me.user.email || '')} · ${esc(RELATION[u?.relation] || '')}</div>
       </div>`;
     const unitPick = me.units.length > 1
       ? `<label class="prop-pick ms-md-auto"><span class="d-none d-sm-inline small text-body-secondary me-1">Unidad:</span>
@@ -841,11 +848,11 @@ const App = (() => {
         ${unitPick}
         <div class="dropdown">
           <button class="btn btn-icon dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Cuenta">
-            <span class="avatar avatar-sm">${esc(initials(me.user.name || me.user.email))}</span></button>
+            <span class="avatar avatar-sm">${esc(initials(me.user.name || me.user.email || '?'))}</span></button>
           <ul class="dropdown-menu dropdown-menu-end shadow-sm">
             ${others.length ? `<li><h6 class="dropdown-header">Otras copropiedades</h6></li>${others.map((p) => `<li><a class="dropdown-item" href="/${esc(p.slug)}/portal/">${esc(p.name)}</a></li>`).join('')}<li><hr class="dropdown-divider"></li>` : ''}
-            <li><span class="dropdown-item-text small text-body-secondary">${esc(me.user.name || '')}<br>${esc(me.user.email)}</span></li>
-            <li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>
+            <li><span class="dropdown-item-text small text-body-secondary">${esc(me.user.name || '')}<br>${esc(me.user.email || (u ? `Unidad ${u.label}` : ''))}</span></li>
+            ${me.user.email ? '<li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>' : ''}
             <li><button class="dropdown-item" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
           </ul>
         </div>
@@ -874,9 +881,9 @@ const App = (() => {
     document.body.addEventListener('click', async (ev) => {
       const a = ev.target.closest('[data-action]');
       if (a?.dataset.action === 'logout') {
-        await api('/auth/logout', { method: 'POST' }).catch(() => {});
+        await api('/public/portal/logout', { method: 'POST' }).catch(() => {});
         clearShell();
-        location.href = '/';
+        location.href = PORTAL_LOGIN;
       } else if (a?.dataset.action === 'change-password') {
         changePasswordDialog(me.user.email);
       }

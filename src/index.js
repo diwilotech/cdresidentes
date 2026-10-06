@@ -1,7 +1,7 @@
 // CD Residentes — Worker monolítico: API + panel admin (HTML estáticos).
 import { Router } from './router.js';
 import { HttpError, errorResponse } from './lib/http.js';
-import { authenticate, loadSession } from './lib/auth.js';
+import { authenticate, loadSession, loadPortalSession } from './lib/auth.js';
 import { slugFromPath, businessBySlug, defaultSlug, isMember, isResident, homePath } from './lib/tenant.js';
 import * as authApi from './api/auth.js';
 import * as platformApi from './api/platform.js';
@@ -90,9 +90,11 @@ async function handleBusinessPath(req, env, url, slug) {
     return keepPrefix(await assetAt(env, req, rest), `/${slug}`, url);
   }
   // Portal de propietarios: /<slug>/portal/… (los datos los filtra la API por las unidades de la persona).
+  // Sin sesión se entra por /<slug>/portal/login (apartamento + cédula).
   if (rest === '/portal' || rest.startsWith('/portal/')) {
-    if (!(await loadSession(req, env))) {
-      return Response.redirect(`${url.origin}/${slug}/admin/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
+    const page = rest.replace(/\.html$/, '').replace(/\/$/, '');
+    if (page !== '/portal/login' && !(await loadPortalSession(req, env, business.id)) && !(await loadSession(req, env))) {
+      return Response.redirect(`${url.origin}/${slug}/portal/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
     }
     return keepPrefix(await assetAt(env, req, rest), `/${slug}`, url);
   }

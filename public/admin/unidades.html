@@ -175,7 +175,7 @@
                 ${u.vehicles ? `<div class="mt-1"><i class="bi bi-car-front me-1"></i>${esc(u.vehicles)}</div>` : ''}</div>
               <div class="col-md-6"><div class="eyebrow mb-1">Mascotas</div>${d.pets.map((p) => `<div><i class="bi bi-heart me-1"></i>${esc(p.name)} · ${esc(p.species)}${p.breed ? ' ' + esc(p.breed) : ''}</div>`).join('') || '<span class="text-body-secondary">Ninguna registrada</span>'}</div>
             </div>
-            <div class="eyebrow mt-3 mb-1">Acceso al portal de propietarios</div><div id="access" class="small"></div>
+            <div class="eyebrow mt-3 mb-1">Portal de propietarios</div><div id="access" class="small"></div>
             <div class="eyebrow mt-3 mb-1">Documentos</div><div id="files"></div>
           </div>`, { size: 'modal-lg' });
         portalAccess(el.querySelector('#access'), u);
@@ -203,17 +203,22 @@
           try { d = await App.api(`/units/${u.id}/access`); } catch (err) { box.textContent = err.message; return; }
           const has = (mail) => mail && d.items.some((x) => x.email === mail.toLowerCase());
           box.innerHTML = `
+            <div class="mb-2">${u.owner_doc
+              ? `<i class="bi bi-person-vcard text-primary me-1"></i>El propietario entra a <a href="${esc(d.portalUrl)}" target="_blank" rel="noopener">${esc(d.portalUrl)}</a> eligiendo esta unidad y con su cédula (${esc(u.owner_doc)}).
+                 <button class="btn btn-sm btn-outline-primary ms-1" data-share-portal><i class="bi bi-send me-1"></i>Enviarle el link</button>`
+              : '<span class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Registra la cédula del propietario (Editar) para que pueda entrar al portal con su apartamento y cédula.</span>'}</div>
+            ${d.items.length ? '<div class="text-body-secondary mb-1">Con usuario y contraseña:</div>' : ''}
             ${d.items.map((x) => `<div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom">
               <i class="bi bi-person-check text-primary"></i><span class="fw-medium">${esc(x.name || x.email)}</span>
               <span class="text-body-secondary">${esc(x.email)} · ${REL[x.relation]}</span>
               ${x.has_password ? App.badge('Activo', 'success') : App.badge('Invitación pendiente', 'warning')}
               ${App.canManage() ? `<span class="ms-auto"><button class="btn btn-sm btn-outline-secondary" data-relink="${esc(x.id)}" data-rel="${esc(x.relation)}" title="Link para crear o restablecer la contraseña"><i class="bi bi-link-45deg"></i></button>
-                <button class="btn btn-sm btn-outline-danger" data-unlink="${esc(x.id)}" title="Quitar acceso"><i class="bi bi-x-lg"></i></button></span>` : ''}</div>`).join('') || '<div class="text-body-secondary mb-1">Nadie de esta unidad entra al portal todavía.</div>'}
+                <button class="btn btn-sm btn-outline-danger" data-unlink="${esc(x.id)}" title="Quitar acceso"><i class="bi bi-x-lg"></i></button></span>` : ''}</div>`).join('') || ''}
             ${App.canManage() ? `<div class="d-flex flex-wrap gap-2 mt-2">
               ${u.owner_email && !has(u.owner_email) ? `<button class="btn btn-sm btn-outline-primary" data-grant="owner"><i class="bi bi-house-heart me-1"></i>Dar acceso al propietario</button>` : ''}
               ${u.tenant_email && !has(u.tenant_email) ? `<button class="btn btn-sm btn-outline-primary" data-grant="tenant"><i class="bi bi-house-heart me-1"></i>Dar acceso al arrendatario</button>` : ''}
-              <button class="btn btn-sm btn-outline-secondary" data-grant="other"><i class="bi bi-person-plus me-1"></i>Otro correo</button>
-              <a class="btn btn-sm btn-link" href="${esc(d.portalUrl)}" target="_blank" rel="noopener">Abrir portal</a></div>` : ''}`;
+              <button class="btn btn-sm btn-outline-secondary" data-grant="other"><i class="bi bi-person-plus me-1"></i>Otro correo</button></div>` : ''}`;
+          portalUrl = d.portalUrl;
         }
         // Muestra el link y ofrece enviarlo por WhatsApp o correo a la persona.
         const share = (url, relation, isInvite) => {
@@ -233,9 +238,13 @@
           if (r.invitePending) return App.toast('Acceso dado. Esta persona ya tenía un link de invitación sin usar: sigue sirviendo (si lo perdió, usa el botón de link).');
           share(r.inviteUrl || r.portalUrl, body.relation, !!r.inviteUrl);
         }
+        let portalUrl = '';
         box.addEventListener('click', async (ev) => {
           const b = ev.target.closest('button');
           if (!b) return;
+          if (b.dataset.sharePortal !== undefined) {
+            return App.messageDialog(u, { text: `Hola ${u.owner_name || ''}, la administración de ${u.property_name} te invita al portal de residentes: allí ves los comunicados, tu estado de cuenta y la cuenta de cobro, registras tus mascotas y reservas zonas comunes.\n\nEntra aquí, elige tu apartamento (${unitLabel(u)}) e ingresa con tu cédula:\n${portalUrl}` });
+          }
           try {
             if (b.dataset.grant === 'other') {
               App.formDialog({

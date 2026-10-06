@@ -67,10 +67,14 @@ El selector **Conjunto** de la barra superior filtra todas las páginas (se recu
 | Mascotas | Registrar, editar y retirar mascotas con foto o carné y vacunas; la administración las ve en su censo |
 | Reservas | Zonas de su conjunto con tarifa y reglamento, calendario de ocupación (sin datos de otras unidades), valor estimado; la solicitud queda **por aprobar** y se puede cancelar |
 
-**Dar acceso:** en Propietarios → ficha de la unidad → *Acceso al portal* (propietario, arrendatario u otro correo). Si la persona
-no tiene contraseña recibe un link de invitación que la lleva a crear la contraseña y entrar a su portal; se puede enviar por
-WhatsApp o correo desde ahí. Con varias unidades elige cuál ver en la barra superior. Al entrar por `/` o `/admin` sin ser del
-equipo, la app la lleva a su portal.
+**Ingreso:** `/<slug>/portal/login` — el propietario elige conjunto, torre y apartamento y escribe la **cédula del propietario**
+(la registrada en la unidad; se aceptan puntos y espacios). No necesita correo ni contraseña. La sesión (cookie `cdr_portal`, tabla
+`portal_sessions`) incluye todas sus unidades del negocio con esa misma cédula y cae si la administración cambia la cédula.
+Cinco cédulas erradas bloquean esa unidad 15 minutos (`portal_logins`). La lista de apartamentos del ingreso no muestra nombres.
+
+En Propietarios → ficha de la unidad → *Portal de propietarios* está el link para enviárselo por WhatsApp o correo. Opcionalmente
+se le puede dar un usuario con correo y contraseña (propietario, arrendatario u otro correo), útil para arrendatarios, que no tienen
+cédula registrada en la unidad.
 
 **Tablas:** todas las listas usan DataTables (búsqueda, orden, paginación, columnas adaptables en celular) con descarga en
 Copiar, Excel, CSV, PDF e Imprimir; las columnas de montos llevan total en el pie y la descarga trae los valores como números
