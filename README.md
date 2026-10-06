@@ -27,10 +27,11 @@ src/
   router.js           router con nivel de auth por ruta
   lib/                http, db (guardia de tenant), crud, auth (contraseña + sesión + suscripción), tenant, time
   api/                auth, platform (Diwilo), business (+equipo), dashboard, properties, units, charges,
-                      requests, pqrs, bookings, pets, notices, files, ai
+                      requests, pqrs, bookings, pets, notices, files, ai, portal (propietarios)
   integrations/       whatsapp, email
 public/admin/         login, index, conjuntos, unidades, cartera, solicitudes, pqrs, reservas, mascotas,
                       comunicados, asistente (chat), ajustes
+public/portal/        portal de propietarios: index, comunicados, cartera, unidad, mascotas, reservas
 migrations/           esquema D1
 ```
 
@@ -51,6 +52,25 @@ migrations/           esquema D1
 | Ajustes | Datos y logo de la administración, instancia de WhatsApp, **Cartera y cuenta de cobro** (formato del PDF, día de vencimiento, % de interés y su base, % y días del cobro jurídico, % de retroactivo, reparto y cuotas de extraordinarias, nota al pie), equipo con links de invitación, pruebas de WhatsApp y correo |
 
 El selector **Conjunto** de la barra superior filtra todas las páginas (se recuerda en el navegador).
+
+## Portal de propietarios
+
+`/<slug>/portal` es la parte de los propietarios y residentes. Cada persona solo ve las unidades a las que está vinculada
+(tabla `residents`, nivel de auth `resident` en [src/api/portal.js](src/api/portal.js)); no es miembro del negocio y no entra al panel.
+
+| Página | Qué hace |
+|---|---|
+| Inicio | Saldo pendiente y vencido, próximo vencimiento, último pago, últimos comunicados y próximas reservas |
+| Comunicados | Circulares publicadas para todos los conjuntos o el suyo, con búsqueda, categoría y adjuntos |
+| Mi cartera | Total a pagar, vencido y por vencer; cobros pendientes y pagos de 24 meses (descargables); pendiente por concepto; forma de pago; **cuenta de cobro PDF** (la misma del panel) |
+| Mi unidad | Datos de la unidad y del conjunto, contacto de la administración, documentos del conjunto (reglamento, actas); la persona actualiza su celular, habitantes y placas |
+| Mascotas | Registrar, editar y retirar mascotas con foto o carné y vacunas; la administración las ve en su censo |
+| Reservas | Zonas de su conjunto con tarifa y reglamento, calendario de ocupación (sin datos de otras unidades), valor estimado; la solicitud queda **por aprobar** y se puede cancelar |
+
+**Dar acceso:** en Propietarios → ficha de la unidad → *Acceso al portal* (propietario, arrendatario u otro correo). Si la persona
+no tiene contraseña recibe un link de invitación que la lleva a crear la contraseña y entrar a su portal; se puede enviar por
+WhatsApp o correo desde ahí. Con varias unidades elige cuál ver en la barra superior. Al entrar por `/` o `/admin` sin ser del
+equipo, la app la lleva a su portal.
 
 **Tablas:** todas las listas usan DataTables (búsqueda, orden, paginación, columnas adaptables en celular) con descarga en
 Copiar, Excel, CSV, PDF e Imprimir; las columnas de montos llevan total en el pie y la descarga trae los valores como números

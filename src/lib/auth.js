@@ -177,6 +177,7 @@ function assertWritable(c, paidUntil) {
 //   'session'  : sesión vigente (correo + contraseña)
 //   'tenant'   : + negocio activo con membresía
 //   'manager'  : + rol owner/admin en el negocio
+//   'resident' : portal de propietarios: negocio del encabezado x-business + unidades vinculadas (tabla residents)
 //   'platform' : Diwilo Web (Authorization: Bearer PLATFORM_KEY)
 
 async function authenticatePlatform(c) {
@@ -194,6 +195,7 @@ export async function authenticate(c, level) {
   if (!s) throw new HttpError(401, 'Inicia sesión', 'NO_SESSION');
   c.session = s;
   c.user = { id: s.user_id, email: s.email, name: s.name };
+  if (level === 'resident') return authenticateResident(c);
 
   // El panel vive en /<slug>/admin y envía el negocio en x-business: manda sobre el de la sesión.
   // (en GET también por ?b=<slug>, para enlaces que se abren en otra pestaña, p. ej. archivos)
@@ -206,6 +208,8 @@ export async function authenticate(c, level) {
       s.user_id, slug,
     );
     if (!b) throw new HttpError(404, 'Consultorio no encontrado', 'NO_BUSINESS');
+    // Las rutas de solo sesión (/auth/*) también se llaman desde el portal, donde la persona no es miembro.
+    if (!b.role && level === 'session') return;
     if (!b.role) throw new HttpError(403, 'No tienes acceso a este negocio', 'NOT_MEMBER');
     Object.assign(s, {
       business_id: b.id, business_name: b.name, business_slug: b.slug, business_logo_key: b.logo_key, business_status: b.status,
@@ -223,4 +227,25 @@ export async function authenticate(c, level) {
   if (level === 'manager' && !['owner', 'admin'].includes(s.role)) {
     throw new HttpError(403, 'Requiere rol de administrador del negocio');
   }
+}
+
+// Portal: el negocio sale de la ruta (/<slug>/portal -> x-business) y la persona solo ve sus unidades.
+async function authenticateResident(c) {
+  const slug = c.req.headers.get('x-business') || (c.req.method === 'GET' && c.url?.searchParams.get('b')) || null;
+  if (!slug) throw new HttpError(409, 'Selecciona un conjunto', 'NO_BUSINESS');
+  const db = globalDb(c.env);
+  const b = await db.first('SELECT id, name, slug, status, timezone, paid_until, logo_key FROM businesses WHERE slug = ?', slug);
+  if (!b || b.status !== 'active') throw new HttpError(404, 'Administración no encontrada', 'NO_BUSINESS');
+  const units = await db.all(
+    `SELECT r.unit_id, r.relation, u.property_id FROM residents r JOIN units u ON u.id = r.unit_id
+      WHERE r.user_id = ? AND r.business_id = ?`,
+    c.user.id, b.id,
+  );
+  if (!units.length) throw new HttpError(403, 'Tu usuario no está vinculado a ninguna unidad de esta administración', 'NOT_RESIDENT');
+  assertWritable(c, b.paid_until);
+  c.business = b;
+  c.businessId = b.id;
+  c.timezone = b.timezone || 'America/Bogota';
+  c.role = 'resident';
+  c.units = units;
 }

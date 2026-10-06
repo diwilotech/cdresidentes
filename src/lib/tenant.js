@@ -46,3 +46,28 @@ export async function isMember(env, userId, slug) {
     userId, slug,
   ));
 }
+
+// Primera administración donde la persona es propietaria/residente (portal).
+export async function residentSlug(env, userId) {
+  const row = await globalDb(env).first(
+    `SELECT b.slug FROM residents r JOIN businesses b ON b.id = r.business_id
+      WHERE r.user_id = ? AND b.status = 'active' ORDER BY b.name LIMIT 1`,
+    userId,
+  );
+  return row?.slug || null;
+}
+
+export async function isResident(env, userId, slug) {
+  return !!(await globalDb(env).first(
+    `SELECT 1 FROM residents r JOIN businesses b ON b.id = r.business_id WHERE r.user_id = ? AND b.slug = ? AND b.status = 'active'`,
+    userId, slug,
+  ));
+}
+
+// A dónde entra una sesión: su panel (si es del equipo) o su portal de residente.
+export async function homePath(env, session) {
+  const s = await defaultSlug(env, session);
+  if (s) return `/${s}/admin/`;
+  const r = await residentSlug(env, session.user_id);
+  return r ? `/${r}/portal/` : null;
+}

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi cartera · Portal de residentes</title>
+  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <link rel="expect" href="#cdr-ready" blocking="render">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1200px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Estado de cuenta</div>
+        <h1 class="page-title">Mi cartera</h1>
+        <p class="page-sub" id="sub"></p>
+      </div>
+      <button class="btn btn-primary" id="pdfBtn"><i class="bi bi-file-earmark-pdf me-1"></i>Cuenta de cobro PDF</button>
+    </div>
+
+    <div class="row g-3 mb-3" id="kpis"></div>
+
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-hourglass-split me-2 text-primary"></i>Cobros pendientes</div>
+          <div class="card-body pt-2"><table class="table table-sm align-middle w-100" id="pendingTable"></table></div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-check2-circle me-2 text-primary"></i>Pagos registrados <span class="small text-body-secondary fw-normal">(últimos 24 meses)</span></div>
+          <div class="card-body pt-2"><table class="table table-sm align-middle w-100" id="paidTable"></table></div>
+        </div>
+      </div>
+      <div class="col-lg-4">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-pie-chart me-2 text-primary"></i>Pendiente por concepto</div>
+          <div class="card-body" id="byConcept"></div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-bank me-2 text-primary"></i>Cómo pagar</div>
+          <div class="card-body small" id="howPay"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script src="/admin/assets/cuenta-cobro.js"></script>
+  <script>
+    (async () => {
+      const me = await App.initPortal('cartera');
+      if (!me) return;
+      const { esc, money } = App;
+      const $ = (id) => document.getElementById(id);
+      const label = (c) => `${App.CONCEPTS[c.concept] || c.concept}${c.period ? ' · ' + App.fmtMonth(c.period) : ''}`;
+
+      async function load() {
+        const u = App.unitInfo();
+        $('sub').textContent = `${u.label} · ${u.property_name}`;
+        let d, info;
+        try {
+          [d, info] = await Promise.all([
+            App.api('/charges' + App.qs({ unit: u.id }, { withProperty: false })),
+            App.api('/unit' + App.qs({ unit: u.id }, { withProperty: false })),
+          ]);
+        } catch (err) { return App.fail(err); }
+        const pending = d.items.filter((c) => !c.paid_at);
+        const paid = d.items.filter((c) => c.paid_at);
+        const total = pending.reduce((s, c) => s + c.amount, 0);
+        const overdue = pending.filter((c) => c.due_date < d.today).reduce((s, c) => s + c.amount, 0);
+        const byConcept = {};
+        pending.forEach((c) => (byConcept[c.concept] = (byConcept[c.concept] || 0) + c.amount));
+
+        $('kpis').innerHTML = [
+          ['bi-cash-stack', overdue ? 'red' : '', 'Total a pagar', money(total)],
+          ['bi-exclamation-octagon', 'red', 'Vencido', money(overdue)],
+          ['bi-calendar-event', 'amber', 'Por vencer', money(total - overdue)],
+        ].map(([icon, cls, l, v]) => `<div class="col-sm-4"><div class="card kpi"><div class="d-flex justify-content-between gap-2">
+          <div><div class="kpi-label">${l}</div><div class="kpi-value">${v}</div></div><div class="kpi-icon ${cls}"><i class="bi ${icon}"></i></div></div></div></div>`).join('');
+
+        const keys = App.portalConcepts(byConcept);
+        $('byConcept').innerHTML = `<table class="table table-sm mb-0"><tbody>
+          ${keys.map((k) => `<tr><td>${esc(App.CONCEPTS[k])}</td><td class="num ${byConcept[k] ? 'fw-semibold' : 'text-body-secondary'}">${money(byConcept[k] || 0)}</td></tr>`).join('')}
+          <tr class="fw-bold"><td>Total</td><td class="num">${money(total)}</td></tr></tbody></table>
+          ${total ? '' : '<div class="alert alert-success small mt-3 mb-0"><i class="bi bi-patch-check me-1"></i>Estás a paz y salvo.</div>'}`;
+
+        const p = info.property;
+        $('howPay').innerHTML = `${p.payment_info ? `<p class="mb-2 notice-body">${esc(p.payment_info)}</p>` : '<p class="text-body-secondary mb-2">Paga en la administración o por los medios autorizados por el conjunto.</p>'}
+          ${me.billing.concepts.includes('int') ? `<p class="text-body-secondary mb-2">Después del vencimiento se liquidan intereses de mora (${App.fmtNum(me.billing.interest_rate, 2)} % mensual).</p>` : ''}
+          <div class="text-body-secondary">Si ya pagaste, envía el soporte a la administración${info.business.email ? `: <a href="mailto:${esc(info.business.email)}">${esc(info.business.email)}</a>` : ''}${info.business.phone ? ` · ${esc(info.business.phone)}` : ''}.</div>`;
+
+        await App.dataTable($('pendingTable'), {
+          title: `Cobros pendientes ${u.label}`, data: pending, order: [[1, 'asc']], pageLength: 10,
+          columns: [
+            { title: 'Concepto', value: label, html: (c) => `<div class="fw-medium">${esc(label(c))}</div>${c.description ? `<div class="small text-body-secondary">${esc(c.description)}</div>` : ''}` },
+            { title: 'Vence', value: (c) => c.due_date, html: (c) => App.fmtDate(c.due_date) },
+            { title: 'Valor', sum: true, value: (c) => c.amount, html: (c) => money(c.amount) },
+            { title: 'Estado', value: (c) => (c.due_date < d.today ? 'Vencido' : 'Por vencer'),
+              html: (c) => (c.due_date < d.today ? App.badge(`Vencido · ${App.daysSince(c.due_date)} d`, 'danger') : App.badge('Por vencer', 'warning')) },
+          ],
+        });
+        await App.dataTable($('paidTable'), {
+          title: `Pagos ${u.label}`, data: paid, order: [[0, 'desc']], pageLength: 10,
+          columns: [
+            { title: 'Fecha de pago', value: (c) => c.paid_at, html: (c) => App.fmtDate(c.paid_at) },
+            { title: 'Concepto', value: label },
+            { title: 'Valor', sum: true, value: (c) => c.amount, html: (c) => money(c.amount) },
+            { title: 'Referencia', value: (c) => c.payment_ref || '' },
+          ],
+        });
+      }
+
+      $('pdfBtn').addEventListener('click', () => CuentaCobro.open({ unit: App.currentUnit() }));
+      App.onUnit(load);
+      await load();
+    })();
+  </script>
+  <span id="cdr-ready" hidden></span>
+</body>
+</html>

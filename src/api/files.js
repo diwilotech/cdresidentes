@@ -31,6 +31,45 @@ function refFrom(c) {
   return { type, id };
 }
 
+// Guarda el archivo del formulario (campo 'file') en R2 y lo registra en files. La referencia ya debe estar validada.
+export async function saveUpload(c, type, refId, { imagesOnly = false } = {}) {
+  const form = await c.req.formData().catch(() => null);
+  const file = form?.get('file');
+  if (!file || typeof file === 'string') throw new HttpError(400, 'Adjunta un archivo');
+  if (file.size > MAX_BYTES) throw new HttpError(413, 'El archivo supera 15 MB');
+  if (!ALLOWED.test(file.type)) throw new HttpError(415, 'Solo se permiten imágenes o PDF');
+  if (imagesOnly && !file.type.startsWith('image/')) throw new HttpError(415, 'Adjunta una imagen');
+
+  const id = uuid();
+  const key = `${c.businessId}/${type}/${refId}/${id}`;
+  const name = (file.name || 'archivo').replace(/[^\w.\- áéíóúñÁÉÍÓÚÑ]/g, '_').slice(0, 120);
+  await c.env.FILES.put(key, file.stream(), {
+    httpMetadata: { contentType: file.type },
+    customMetadata: { businessId: c.businessId, refType: type, refId, name },
+  });
+  await tenantDb(c).run(
+    `INSERT INTO files (id, business_id, ref_type, ref_id, r2_key, name, content_type, size, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id, c.businessId, type, refId, key, name, file.type, file.size, c.user.id,
+  );
+  return { id, name };
+}
+
+// Respuesta con el contenido de un archivo (fila de files).
+export async function serveFile(c, f) {
+  const obj = await c.env.FILES.get(f.r2_key);
+  if (!obj) throw new HttpError(404, 'Archivo no encontrado en almacenamiento');
+  const disposition = c.url.searchParams.get('download') ? 'attachment' : 'inline';
+  return new Response(obj.body, {
+    headers: {
+      'content-type': f.content_type || 'application/octet-stream',
+      'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+      'cache-control': 'private, max-age=300',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
+
 export function routes(r) {
   r.get('/api/public/brand/:bid/:file', 'public', async (c) => {
     if (!/^[\w-]{36}$/.test(c.params.bid) || !/^[\w-]{36}$/.test(c.params.file)) throw new HttpError(404, 'No encontrado');
@@ -58,41 +97,13 @@ export function routes(r) {
   r.post('/api/admin/files', 'tenant', async (c) => {
     const { type, id: refId } = refFrom(c);
     await getRow(c, REF_TABLES[type], refId);
-    const form = await c.req.formData().catch(() => null);
-    const file = form?.get('file');
-    if (!file || typeof file === 'string') throw new HttpError(400, 'Adjunta un archivo');
-    if (file.size > MAX_BYTES) throw new HttpError(413, 'El archivo supera 15 MB');
-    if (!ALLOWED.test(file.type)) throw new HttpError(415, 'Solo se permiten imágenes o PDF');
-
-    const id = uuid();
-    const key = `${c.businessId}/${type}/${refId}/${id}`;
-    const name = (file.name || 'archivo').replace(/[^\w.\- áéíóúñÁÉÍÓÚÑ]/g, '_').slice(0, 120);
-    await c.env.FILES.put(key, file.stream(), {
-      httpMetadata: { contentType: file.type },
-      customMetadata: { businessId: c.businessId, refType: type, refId, name },
-    });
-    await tenantDb(c).run(
-      `INSERT INTO files (id, business_id, ref_type, ref_id, r2_key, name, content_type, size, uploaded_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      id, c.businessId, type, refId, key, name, file.type, file.size, c.user.id,
-    );
-    return json({ id, name }, 201);
+    return json(await saveUpload(c, type, refId), 201);
   });
 
   r.get('/api/admin/files/:id', 'tenant', async (c) => {
     const f = await tenantDb(c).first('SELECT * FROM files WHERE business_id = ? AND id = ?', c.businessId, c.params.id);
     if (!f) throw new HttpError(404, 'Archivo no encontrado');
-    const obj = await c.env.FILES.get(f.r2_key);
-    if (!obj) throw new HttpError(404, 'Archivo no encontrado en almacenamiento');
-    const disposition = c.url.searchParams.get('download') ? 'attachment' : 'inline';
-    return new Response(obj.body, {
-      headers: {
-        'content-type': f.content_type || 'application/octet-stream',
-        'content-disposition': `${disposition}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
-        'cache-control': 'private, max-age=300',
-        'x-content-type-options': 'nosniff',
-      },
-    });
+    return serveFile(c, f);
   });
 
   r.delete('/api/admin/files/:id', 'tenant', async (c) => {

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reservas · Portal de residentes</title>
+  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <link rel="expect" href="#cdr-ready" blocking="render">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1200px">
+    <div class="mb-3">
+      <div class="eyebrow">Zonas comunes</div>
+      <h1 class="page-title">Reservas</h1>
+      <p class="page-sub">Elige la zona, mira la disponibilidad y envía tu solicitud. La administración la aprueba.</p>
+    </div>
+
+    <div class="row g-2 mb-3 amenity-pick" id="amenities"></div>
+
+    <div class="row g-3 mb-3 d-none" id="bookBox">
+      <div class="col-lg-7">
+        <div class="card h-100">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <button class="btn btn-sm btn-outline-secondary" id="prev" aria-label="Mes anterior"><i class="bi bi-chevron-left"></i></button>
+            <span id="monthLabel" class="text-capitalize"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="next" aria-label="Mes siguiente"><i class="bi bi-chevron-right"></i></button>
+          </div>
+          <div class="card-body">
+            <div class="cal" id="cal"></div>
+            <div class="small text-body-secondary mt-2"><span class="slot approved">Aprobada</span><span class="slot">Por aprobar</span><span class="slot mine">Tuya</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card h-100">
+          <div class="card-header"><i class="bi bi-calendar-plus me-2 text-primary"></i>Solicitar reserva · <span id="amenityName"></span></div>
+          <div class="card-body">
+            <form id="bookForm" novalidate>
+              <div class="row g-2">
+                <div class="col-12"><label class="form-label small">Fecha *</label><input name="date" type="date" class="form-control" required></div>
+                <div class="col-12" id="daySlots"></div>
+                <div class="col-6"><label class="form-label small">Desde *</label><input name="start_time" type="time" class="form-control" required value="14:00"></div>
+                <div class="col-6"><label class="form-label small">Hasta *</label><input name="end_time" type="time" class="form-control" required value="18:00"></div>
+                <div class="col-12"><label class="form-label small">Notas para la administración</label><textarea name="notes" class="form-control" rows="2" maxlength="500" placeholder="Número de invitados, tipo de evento…"></textarea></div>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <div class="small"><span class="text-body-secondary">Valor estimado:</span> <strong id="price">—</strong></div>
+                <button class="btn btn-primary" type="submit"><i class="bi bi-send me-1"></i>Solicitar</button>
+              </div>
+              <div class="small text-body-secondary mt-2 notice-body" id="rules"></div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><i class="bi bi-list-check me-2 text-primary"></i>Mis reservas</div>
+      <div class="card-body pt-2"><table class="table table-sm align-middle w-100" id="mine"></table></div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      const me = await App.initPortal('reservas');
+      if (!me) return;
+      const { esc, money } = App;
+      const $ = (id) => document.getElementById(id);
+      const STATUS = { pending: ['Por aprobar', 'warning'], approved: ['Aprobada', 'success'], rejected: ['Rechazada', 'danger'], cancelled: ['Cancelada', 'secondary'] };
+      const FEE = { evento: 'por evento', hora: 'por hora', dia: 'por día' };
+      const today = App.todayLocal();
+      let amenities = [], amenity = null, month = today.slice(0, 7), taken = [], mine = [];
+
+      // Zonas del conjunto de la unidad activa.
+      async function loadAmenities() {
+        let all;
+        try { ({ items: all } = await App.api('/amenities')); } catch (err) { return App.fail(err); }
+        amenities = all.filter((a) => a.property_id === App.unitInfo().property_id);
+        if (!amenities.some((a) => a.id === amenity?.id)) amenity = amenities[0] || null;
+        $('amenities').innerHTML = amenities.map((a) => `
+          <div class="col-6 col-md-4 col-xl-3"><div class="card h-100 ${a.id === amenity?.id ? 'active' : ''}" data-amenity="${esc(a.id)}"><div class="card-body py-2">
+            <div class="fw-semibold">${esc(a.name)}</div>
+            <div class="small text-body-secondary">${a.fee ? `${money(a.fee)} ${FEE[a.fee_unit]}` : 'Sin costo'}${a.capacity ? ` · ${a.capacity} personas` : ''}</div>
+          </div></div></div>`).join('') || '<div class="col-12"><div class="card"><div class="empty">Tu conjunto no tiene zonas comunes para reservar.</div></div></div>';
+        $('bookBox').classList.toggle('d-none', !amenity);
+        if (amenity) await pick(amenity.id);
+      }
+
+      async function pick(id) {
+        amenity = amenities.find((a) => a.id === id);
+        document.querySelectorAll('[data-amenity]').forEach((el) => el.classList.toggle('active', el.dataset.amenity === id));
+        $('amenityName').textContent = amenity.name;
+        $('rules').textContent = amenity.rules ? `Reglamento: ${amenity.rules}` : '';
+        await loadMonth();
+        price();
+      }
+
+      async function loadMonth() {
+        try { ({ items: taken } = await App.api('/availability' + App.qs({ amenity: amenity.id, month }, { withProperty: false }))); } catch (err) { return App.fail(err); }
+        const [y, m] = month.split('-').map(Number);
+        $('monthLabel').textContent = App.fmtMonth(month);
+        const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+        const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const sel = $('bookForm').elements.date.value;
+        let html = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'].map((d) => `<div class="dow">${d}</div>`).join('');
+        html += '<div class="day out"></div>'.repeat(first);
+        for (let d = 1; d <= days; d++) {
+          const iso = `${month}-${String(d).padStart(2, '0')}`;
+          const evs = taken.filter((b) => b.date === iso);
+          html += `<div class="day ${iso === today ? 'today' : ''} ${iso < today ? 'past' : ''} ${iso === sel ? 'sel' : ''}" data-day="${iso}">
+            <div class="n">${d}</div>${evs.map((b) => `<span class="ev ${b.mine ? 'mine' : b.status === 'pending' ? 'pending' : ''}">${esc(b.start_time)}–${esc(b.end_time)}</span>`).join('')}</div>`;
+        }
+        $('cal').innerHTML = html;
+        $('prev').disabled = month <= today.slice(0, 7);
+        slots();
+      }
+
+      // Horarios ocupados del día elegido.
+      function slots() {
+        const date = $('bookForm').elements.date.value;
+        const evs = taken.filter((b) => b.date === date);
+        $('daySlots').innerHTML = !date ? '' : evs.length
+          ? `<div class="small text-body-secondary mb-1">Ocupado ese día:</div>${evs.map((b) => `<span class="slot ${b.mine ? 'mine' : b.status}">${esc(b.start_time)}–${esc(b.end_time)}</span>`).join('')}`
+          : '<div class="small text-success"><i class="bi bi-check-circle me-1"></i>Libre todo el día</div>';
+      }
+
+      function price() {
+        const f = $('bookForm').elements;
+        if (!amenity) return;
+        let v = amenity.fee;
+        if (amenity.fee_unit === 'hora') {
+          const mins = (h) => (h ? +h.slice(0, 2) * 60 + +h.slice(3, 5) : 0);
+          v = Math.round((amenity.fee * Math.max(0, mins(f.end_time.value) - mins(f.start_time.value))) / 60);
+        }
+        $('price').textContent = v ? money(v) : 'Sin costo';
+      }
+
+      async function loadMine() {
+        try { ({ items: mine } = await App.api('/bookings')); } catch (err) { return App.fail(err); }
+        await App.dataTable($('mine'), {
+          title: 'Mis reservas', data: mine, order: [[1, 'desc']], pageLength: 10,
+          columns: [
+            { title: 'Zona', value: (b) => b.amenity_name, html: (b) => `<div class="fw-semibold">${esc(b.amenity_name)}</div>${me.units.length > 1 ? `<div class="small text-body-secondary">${esc(App.unitLabel(b))}</div>` : ''}` },
+            { title: 'Fecha', value: (b) => `${b.date} ${b.start_time}`, html: (b) => `${App.fmtDate(b.date, { weekday: true })}<div class="small text-body-secondary">${esc(b.start_time)}–${esc(b.end_time)}</div>` },
+            { title: 'Valor', value: (b) => b.amount || 0, html: (b) => (b.amount ? `${money(b.amount)}${b.paid ? ' ' + App.badge('Pagada', 'success') : ''}` : 'Sin costo') },
+            { title: 'Estado', value: (b) => STATUS[b.status][0], html: (b) => App.badge(...STATUS[b.status]) },
+            { title: '', noExport: true, orderable: false, className: 'text-end',
+              html: (b) => (['pending', 'approved'].includes(b.status) && b.date >= today ? `<button class="btn btn-sm btn-outline-danger" data-cancel="${esc(b.id)}">Cancelar</button>` : '') },
+          ],
+        });
+      }
+
+      $('amenities').addEventListener('click', (ev) => { const c = ev.target.closest('[data-amenity]'); if (c) pick(c.dataset.amenity); });
+      $('cal').addEventListener('click', (ev) => {
+        const d = ev.target.closest('[data-day]');
+        if (!d || d.dataset.day < today) return;
+        $('bookForm').elements.date.value = d.dataset.day;
+        document.querySelectorAll('.cal .day.sel').forEach((x) => x.classList.remove('sel'));
+        d.classList.add('sel');
+        slots();
+      });
+      const shift = (n) => { const d = new Date(month + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + n); month = d.toISOString().slice(0, 7); loadMonth(); };
+      $('prev').addEventListener('click', () => shift(-1));
+      $('next').addEventListener('click', () => shift(1));
+      const f = $('bookForm');
+      f.elements.date.min = today;
+      f.elements.date.addEventListener('change', () => {
+        const v = f.elements.date.value;
+        if (v && v.slice(0, 7) !== month) { month = v.slice(0, 7); loadMonth(); } else { loadMonth(); }
+      });
+      f.elements.start_time.addEventListener('input', price);
+      f.elements.end_time.addEventListener('input', price);
+      App.onSubmit(f, async (d) => {
+        await App.api('/bookings', { method: 'POST', body: { ...d, amenity_id: amenity.id, unit_id: App.currentUnit() } });
+        App.toast('Solicitud enviada: queda por aprobar hasta que la administración la revise.');
+        f.elements.notes.value = '';
+        await Promise.all([loadMonth(), loadMine()]);
+      });
+      $('mine').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('[data-cancel]');
+        if (!b || !(await App.confirmAction('¿Cancelar esta reserva?'))) return;
+        try {
+          await App.api(`/bookings/${b.dataset.cancel}/cancel`, { method: 'POST' });
+          App.toast('Reserva cancelada');
+          await Promise.all([loadMine(), amenity && loadMonth()]);
+        } catch (err) { App.fail(err); }
+      });
+      App.onUnit(loadAmenities);
+      await Promise.all([loadAmenities(), loadMine()]);
+    })();
+  </script>
+  <span id="cdr-ready" hidden></span>
+</body>
+</html>

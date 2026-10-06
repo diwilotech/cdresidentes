@@ -66,8 +66,8 @@
     (async () => {
       const $ = (id) => document.getElementById(id);
       const next = App.param('next');
-      // Solo rutas internas del panel: /admin/… o /<negocio>/admin/…
-      const target = next && /^\/(?:[a-z0-9-]+\/)?admin(?:\/|$)/.test(next) ? next : `${App.base}/`;
+      // Solo rutas internas: /admin/…, /<negocio>/admin/… o el portal /<negocio>/portal/…
+      const target = next && /^\/(?:(?:[a-z0-9-]+\/)?admin|[a-z0-9-]+\/portal)(?:\/|$)/.test(next) && !next.startsWith('//') ? next : `${App.base}/`;
       // Entrando por /<negocio>/admin/login se muestra el nombre y el logo de la administración.
       if (App.slug) {
         fetch(`/api/public/negocio/${App.slug}`).then((r) => (r.ok ? r.json() : null)).then((b) => {

@@ -76,7 +76,7 @@
 
       const COLS = [
         { title: 'Unidad', value: (u) => `${unitLabel(u)}${App.currentProperty() ? '' : ' · ' + u.property_name}`,
-          html: (u) => `<div class="fw-semibold">${esc(unitLabel(u))}</div><div class="small text-body-secondary">${esc(App.KIND[u.kind] || u.kind)}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</div>` },
+          html: (u) => `<div class="fw-semibold">${esc(unitLabel(u))}${u.portal_users ? ' <i class="bi bi-house-heart text-primary small" title="Con acceso al portal"></i>' : ''}</div><div class="small text-body-secondary">${esc(App.KIND[u.kind] || u.kind)}${App.currentProperty() ? '' : ' · ' + esc(u.property_name)}</div>` },
         { title: 'Tipo', exportOnly: true, value: (u) => App.KIND[u.kind] || u.kind },
         { title: 'Propietario', value: (u) => u.owner_name || '', html: (u) => `<div class="fw-medium">${esc(u.owner_name || '—')}</div><div class="small text-body-secondary">${esc(u.owner_phone || '')}</div>` },
         { title: 'Documento', exportOnly: true, value: (u) => u.owner_doc || '' },
@@ -88,6 +88,7 @@
         { title: 'Coef. %', sum: true, money: false, value: (u) => u.coefficient || 0, html: (u) => (u.coefficient != null ? App.fmtNum(u.coefficient, 4) : '—') },
         { title: 'Habitantes', exportOnly: true, sum: true, money: false, value: (u) => u.residents || 0 },
         { title: 'Vehículos', exportOnly: true, value: (u) => u.vehicles || '' },
+        { title: 'Acceso al portal', exportOnly: true, value: (u) => (u.portal_users ? 'Sí' : 'No') },
         { title: 'Vencido', sum: true, value: (u) => u.overdue,
           html: (u) => (u.overdue > 0 ? `<span class="fw-bold text-danger">${money(u.overdue)}</span><div>${App.badge('En mora', 'danger')}</div>` : `<span class="mono">${money(0)}</span><div>${App.badge('Al día', 'success')}</div>`) },
         { title: 'Saldo total', sum: true, value: (u) => u.balance, html: (u) => `<span class="mono">${money(u.balance)}</span>` },
@@ -174,8 +175,10 @@
                 ${u.vehicles ? `<div class="mt-1"><i class="bi bi-car-front me-1"></i>${esc(u.vehicles)}</div>` : ''}</div>
               <div class="col-md-6"><div class="eyebrow mb-1">Mascotas</div>${d.pets.map((p) => `<div><i class="bi bi-heart me-1"></i>${esc(p.name)} · ${esc(p.species)}${p.breed ? ' ' + esc(p.breed) : ''}</div>`).join('') || '<span class="text-body-secondary">Ninguna registrada</span>'}</div>
             </div>
+            <div class="eyebrow mt-3 mb-1">Acceso al portal de propietarios</div><div id="access" class="small"></div>
             <div class="eyebrow mt-3 mb-1">Documentos</div><div id="files"></div>
           </div>`, { size: 'modal-lg' });
+        portalAccess(el.querySelector('#access'), u);
         App.attachments(el.querySelector('#files'), 'unit', u.id);
         el.querySelector('[data-pdf]').addEventListener('click', () => CuentaCobro.open({ unit: u.id }));
         el.querySelector('[data-msg]').addEventListener('click', () => { hide(); App.messageDialog(u, { aiCobro: u.overdue > 0 }); });
@@ -190,6 +193,72 @@
             onSave: async (b) => { await App.api(`/units/${u.id}/pay-all`, { method: 'POST', body: b }); App.toast('Pago registrado'); load(); },
           });
         });
+      }
+
+      // Personas que entran al portal con esta unidad: dar acceso, reenviar link y quitar.
+      async function portalAccess(box, u) {
+        const REL = { owner: 'Propietario', tenant: 'Arrendatario' };
+        async function draw() {
+          let d;
+          try { d = await App.api(`/units/${u.id}/access`); } catch (err) { box.textContent = err.message; return; }
+          const has = (mail) => mail && d.items.some((x) => x.email === mail.toLowerCase());
+          box.innerHTML = `
+            ${d.items.map((x) => `<div class="d-flex flex-wrap align-items-center gap-2 py-1 border-bottom">
+              <i class="bi bi-person-check text-primary"></i><span class="fw-medium">${esc(x.name || x.email)}</span>
+              <span class="text-body-secondary">${esc(x.email)} · ${REL[x.relation]}</span>
+              ${x.has_password ? App.badge('Activo', 'success') : App.badge('Invitación pendiente', 'warning')}
+              ${App.canManage() ? `<span class="ms-auto"><button class="btn btn-sm btn-outline-secondary" data-relink="${esc(x.id)}" data-rel="${esc(x.relation)}" title="Link para crear o restablecer la contraseña"><i class="bi bi-link-45deg"></i></button>
+                <button class="btn btn-sm btn-outline-danger" data-unlink="${esc(x.id)}" title="Quitar acceso"><i class="bi bi-x-lg"></i></button></span>` : ''}</div>`).join('') || '<div class="text-body-secondary mb-1">Nadie de esta unidad entra al portal todavía.</div>'}
+            ${App.canManage() ? `<div class="d-flex flex-wrap gap-2 mt-2">
+              ${u.owner_email && !has(u.owner_email) ? `<button class="btn btn-sm btn-outline-primary" data-grant="owner"><i class="bi bi-house-heart me-1"></i>Dar acceso al propietario</button>` : ''}
+              ${u.tenant_email && !has(u.tenant_email) ? `<button class="btn btn-sm btn-outline-primary" data-grant="tenant"><i class="bi bi-house-heart me-1"></i>Dar acceso al arrendatario</button>` : ''}
+              <button class="btn btn-sm btn-outline-secondary" data-grant="other"><i class="bi bi-person-plus me-1"></i>Otro correo</button>
+              <a class="btn btn-sm btn-link" href="${esc(d.portalUrl)}" target="_blank" rel="noopener">Abrir portal</a></div>` : ''}`;
+        }
+        // Muestra el link y ofrece enviarlo por WhatsApp o correo a la persona.
+        const share = (url, relation, isInvite) => {
+          const name = (relation === 'tenant' ? u.tenant_name : u.owner_name) || '';
+          const text = `Hola ${name}, la administración de ${u.property_name} te da acceso al portal de residentes: allí ves los comunicados, tu estado de cuenta, la cuenta de cobro, registras tus mascotas y reservas zonas comunes.\n\n${isInvite ? 'Crea tu contraseña aquí (el link sirve una sola vez):' : 'Entra con tu correo y contraseña de siempre:'}\n${url}`;
+          const { el } = App.modal(`
+            <div class="modal-header"><h5 class="modal-title">Acceso al portal · ${esc(unitLabel(u))}</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+            <div class="modal-body"><p class="small text-body-secondary">${isInvite ? 'Envíale este link: al abrirlo crea su contraseña y entra a su portal. Sirve una sola vez.' : 'Esta persona ya tiene contraseña de Diwilo: entra con ella a este link.'}</p>
+              <div class="input-group"><input class="form-control" readonly value="${esc(url)}"><button class="btn btn-outline-primary" type="button" data-copy><i class="bi bi-copy"></i></button></div></div>
+            <div class="modal-footer"><button class="btn btn-primary" data-send><i class="bi bi-send me-1"></i>Enviar por WhatsApp o correo</button></div>`);
+          el.querySelector('[data-copy]').addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); App.toast('Link copiado'); } catch { el.querySelector('input').select(); } });
+          el.querySelector('[data-send]').addEventListener('click', () => { bootstrap.Modal.getInstance(el).hide(); App.messageDialog(u, { text }); });
+        };
+        async function grant(body) {
+          const r = await App.api(`/units/${u.id}/access`, { method: 'POST', body });
+          await draw();
+          if (r.invitePending) return App.toast('Acceso dado. Esta persona ya tenía un link de invitación sin usar: sigue sirviendo (si lo perdió, usa el botón de link).');
+          share(r.inviteUrl || r.portalUrl, body.relation, !!r.inviteUrl);
+        }
+        box.addEventListener('click', async (ev) => {
+          const b = ev.target.closest('button');
+          if (!b) return;
+          try {
+            if (b.dataset.grant === 'other') {
+              App.formDialog({
+                title: `Dar acceso al portal · ${unitLabel(u)}`, submit: 'Dar acceso', data: { relation: 'owner' },
+                fields: `<label class="form-label small">Correo *</label><input name="email" type="email" class="form-control mb-2" required>
+                  <label class="form-label small">Nombre</label><input name="name" class="form-control mb-2" maxlength="100">
+                  <label class="form-label small">Es</label><select name="relation" class="form-select"><option value="owner">Propietario</option><option value="tenant">Arrendatario o residente</option></select>`,
+                onSave: (d) => grant(d),
+              });
+            } else if (b.dataset.grant) {
+              await grant({ relation: b.dataset.grant });
+            } else if (b.dataset.relink) {
+              const r = await App.api(`/units/${u.id}/access/${b.dataset.relink}/invite`, { method: 'POST' });
+              share(r.inviteUrl, b.dataset.rel, true);
+            } else if (b.dataset.unlink) {
+              if (!(await App.confirmAction('¿Quitar el acceso al portal a esta persona?'))) return;
+              await App.api(`/units/${u.id}/access/${b.dataset.unlink}`, { method: 'DELETE' });
+              App.toast('Acceso retirado');
+              await draw();
+            }
+          } catch (err) { App.fail(err); }
+        });
+        await draw();
       }
 
       $('rows').addEventListener('click', (ev) => {

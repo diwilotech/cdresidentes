@@ -107,6 +107,38 @@ async function pendingByUnit(c, { propertyId, unitId, onlyDebt }) {
     .filter((r) => !onlyDebt || r.total > 0);
 }
 
+// Cuentas de cobro (datos para el PDF). La usan el panel y el portal de residentes.
+export async function buildStatements(c, { unitId, propertyId, all = false }) {
+  const db = tenantDb(c);
+  const [biz, billing, rows, props] = await Promise.all([
+    db.first('SELECT name, email, phone, logo_key FROM businesses WHERE id = ? /* business_id */', c.businessId),
+    getBilling(c),
+    pendingByUnit(c, { propertyId, unitId, onlyDebt: !unitId && !all }),
+    db.all('SELECT id, name, nit, address, city, phone, email, logo_key, payment_info FROM properties WHERE business_id = ?', c.businessId),
+  ]);
+  if (unitId && !rows.length) throw new HttpError(404, 'Unidad no encontrada');
+  const propById = Object.fromEntries(props.map(({ logo_key, ...p }) => [p.id, { ...p, logo: brandUrl(logo_key) }]));
+  const t = today();
+  const due = `${t.slice(0, 8)}${String(billing.due_day).padStart(2, '0')}`;
+  return json({
+    issued: t,
+    period: t.slice(0, 7),
+    pay_before: due >= t ? due : addDays(t, 5),
+    business: { name: biz.name, email: biz.email, phone: biz.phone, logo: brandUrl(biz.logo_key) },
+    billing,
+    concepts: CONCEPTS,
+    statements: rows.map(({ unit: u, ...rest }) => ({
+      number: `${t.slice(0, 7).replace('-', '')}-${(u.tower ? u.tower.replace(/\D+/g, '') || u.tower.slice(-1) : '0')}${u.number}`.toUpperCase(),
+      unit: {
+        id: u.id, label: unitLabel(u), tower: u.tower, number: u.number, kind: u.kind, area_m2: u.area_m2, coefficient: u.coefficient,
+        owner_name: u.owner_name, owner_doc: u.owner_doc, owner_email: u.owner_email, owner_phone: u.owner_phone, tenant_name: u.tenant_name,
+      },
+      property: propById[u.property_id],
+      ...rest,
+    })),
+  });
+}
+
 export function routes(r) {
   // ---------- configuración (Ajustes) ----------
 
@@ -238,34 +270,7 @@ export function routes(r) {
     const unitId = sp.get('unit');
     const propertyId = sp.get('property');
     if (!unitId && !propertyId) throw new HttpError(400, 'Elige una unidad o un conjunto');
-    const db = tenantDb(c);
-    const [biz, billing, rows, props] = await Promise.all([
-      db.first('SELECT name, email, phone, logo_key FROM businesses WHERE id = ? /* business_id */', c.businessId),
-      getBilling(c),
-      pendingByUnit(c, { propertyId, unitId, onlyDebt: !unitId && sp.get('all') !== '1' }),
-      db.all('SELECT id, name, nit, address, city, phone, email, logo_key, payment_info FROM properties WHERE business_id = ?', c.businessId),
-    ]);
-    if (unitId && !rows.length) throw new HttpError(404, 'Unidad no encontrada');
-    const propById = Object.fromEntries(props.map(({ logo_key, ...p }) => [p.id, { ...p, logo: brandUrl(logo_key) }]));
-    const t = today();
-    const due = `${t.slice(0, 8)}${String(billing.due_day).padStart(2, '0')}`;
-    return json({
-      issued: t,
-      period: t.slice(0, 7),
-      pay_before: due >= t ? due : addDays(t, 5),
-      business: { name: biz.name, email: biz.email, phone: biz.phone, logo: brandUrl(biz.logo_key) },
-      billing,
-      concepts: CONCEPTS,
-      statements: rows.map(({ unit: u, ...rest }) => ({
-        number: `${t.slice(0, 7).replace('-', '')}-${(u.tower ? u.tower.replace(/\D+/g, '') || u.tower.slice(-1) : '0')}${u.number}`.toUpperCase(),
-        unit: {
-          id: u.id, label: unitLabel(u), tower: u.tower, number: u.number, kind: u.kind, area_m2: u.area_m2, coefficient: u.coefficient,
-          owner_name: u.owner_name, owner_doc: u.owner_doc, owner_email: u.owner_email, owner_phone: u.owner_phone, tenant_name: u.tenant_name,
-        },
-        property: propById[u.property_id],
-        ...rest,
-      })),
-    });
+    return buildStatements(c, { unitId, propertyId, all: sp.get('all') === '1' });
   });
 
   // ---------- liquidaciones ----------

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mi unidad · Portal de residentes</title>
+  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <link rel="expect" href="#cdr-ready" blocking="render">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1200px">
+    <div class="mb-3">
+      <div class="eyebrow">Información</div>
+      <h1 class="page-title" id="title">Mi unidad</h1>
+      <p class="page-sub" id="sub"></p>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-6">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-building me-2 text-primary"></i>Unidad</div>
+          <div class="card-body" id="unit"></div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-person-lines-fill me-2 text-primary"></i>Mis datos de contacto y ocupación</div>
+          <div class="card-body">
+            <form id="contact" novalidate>
+              <div class="row g-2">
+                <div class="col-sm-6"><label class="form-label small">Celular (WhatsApp)</label><input name="phone" class="form-control" maxlength="30" placeholder="+57 300 000 0000"></div>
+                <div class="col-sm-6"><label class="form-label small">Habitantes</label><input name="residents" type="number" min="0" max="50" class="form-control"></div>
+                <div class="col-12"><label class="form-label small">Vehículos (placas)</label><input name="vehicles" class="form-control" maxlength="120" placeholder="ABC123, XYZ45F"></div>
+              </div>
+              <div class="d-flex justify-content-between align-items-center mt-3">
+                <span class="small text-body-secondary">Para cambiar el nombre o el correo, escribe a la administración.</span>
+                <button class="btn btn-primary" type="submit">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-buildings me-2 text-primary"></i>Conjunto</div>
+          <div class="card-body" id="property"></div>
+        </div>
+        <div class="card mb-3">
+          <div class="card-header"><i class="bi bi-folder2-open me-2 text-primary"></i>Documentos del conjunto</div>
+          <div class="list-group list-group-flush" id="docs"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.initPortal('unidad'))) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const row = (label, value) => (value || value === 0 ? `<div class="d-flex justify-content-between gap-3 py-1 border-bottom"><span class="text-body-secondary small">${label}</span><span class="text-end fw-medium">${value}</span></div>` : '');
+      let d;
+
+      async function load() {
+        const ru = App.unitInfo();
+        try { d = await App.api('/unit' + App.qs({ unit: ru.id }, { withProperty: false })); } catch (err) { return App.fail(err); }
+        const u = d.unit, p = d.property;
+        $('title').textContent = `Unidad ${u.label}`;
+        $('sub').textContent = `${p.name} · ${App.RELATION[d.relation]}`;
+        $('unit').innerHTML =
+          row('Tipo', esc(App.KIND[u.kind] || u.kind)) +
+          row('Torre / bloque', esc(u.tower || '—')) + row('Número', esc(u.number)) +
+          row('Área', u.area_m2 ? `${App.fmtNum(u.area_m2, 2)} m²` : '') +
+          row('Coeficiente', u.coefficient != null ? `${App.fmtNum(u.coefficient, 4)} %` : '') +
+          row('Ocupación', esc(App.OCCUPANCY[u.occupancy] || '')) +
+          row('Propietario', esc(u.owner_name || '—')) +
+          (u.tenant_name ? row('Arrendatario', esc(u.tenant_name)) : '') +
+          row('Habitantes', u.residents ?? '') + row('Vehículos', esc(u.vehicles || '')) +
+          `<div class="eyebrow mt-3 mb-1">Personas con acceso al portal</div>` +
+          d.residents.map((r) => `<div class="small"><i class="bi bi-person me-1"></i>${esc(r.name || r.email)} · ${esc(App.RELATION[r.relation])}</div>`).join('');
+        App.fillForm($('contact'), { phone: d.relation === 'tenant' ? u.tenant_phone : u.owner_phone, residents: u.residents ?? '', vehicles: u.vehicles || '' });
+        $('property').innerHTML = `
+          <div class="d-flex gap-3 align-items-center mb-2">
+            <div class="prop-logo">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : '<i class="bi bi-buildings"></i>'}</div>
+            <div><div class="fw-bold">${esc(p.name)}</div><div class="small text-body-secondary">${esc([p.address, p.city].filter(Boolean).join(', '))}</div></div>
+          </div>` +
+          row('NIT', esc(p.nit || '')) + row('Torres', esc(p.towers || '')) +
+          row('Teléfono', p.phone ? `<a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>` : '') +
+          row('Correo', p.email ? `<a href="mailto:${esc(p.email)}">${esc(p.email)}</a>` : '') +
+          row('Administración', esc(d.business.name)) +
+          row('Contacto administración', [d.business.phone && esc(d.business.phone), d.business.email && `<a href="mailto:${esc(d.business.email)}">${esc(d.business.email)}</a>`].filter(Boolean).join(' · ')) +
+          (p.payment_info ? `<div class="eyebrow mt-3 mb-1">Forma de pago</div><div class="small notice-body">${esc(p.payment_info)}</div>` : '');
+        $('docs').innerHTML = d.docs.map((f) => `<a class="list-group-item list-group-item-action d-flex justify-content-between" href="/api/portal/files/${esc(f.id)}?b=${App.slug}" target="_blank" rel="noopener">
+            <span><i class="bi ${f.content_type === 'application/pdf' ? 'bi-file-earmark-pdf' : 'bi-image'} me-2"></i>${esc(f.name)}</span><span class="small text-body-secondary">${App.fmtDate(f.created_at)}</span></a>`).join('') ||
+          '<div class="empty">La administración aún no ha publicado documentos (reglamento, actas…).</div>';
+      }
+
+      App.onSubmit($('contact'), async (body) => {
+        await App.api(`/unit/${App.currentUnit()}`, { method: 'PUT', body });
+        App.toast('Datos actualizados');
+        load();
+      });
+      App.onUnit(load);
+      await load();
+    })();
+  </script>
+  <span id="cdr-ready" hidden></span>
+</body>
+</html>

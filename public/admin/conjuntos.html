@@ -127,7 +127,7 @@
         const { el } = App.modal(`
           <div class="modal-header"><h5 class="modal-title">Documentos · ${esc(p.name)}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
-          <div class="modal-body"><p class="small text-body-secondary">Actas de asamblea, reglamento, pólizas, presupuestos (PDF o imágenes, hasta 15 MB).</p><div id="files"></div></div>`);
+          <div class="modal-body"><p class="small text-body-secondary">Actas de asamblea, reglamento, pólizas, presupuestos (PDF o imágenes, hasta 15 MB). <strong>Los propietarios y residentes del conjunto los ven en su portal.</strong></p><div id="files"></div></div>`);
         App.attachments(el.querySelector('#files'), 'property', p.id);
       }
 

@@ -2,7 +2,7 @@
 import { Router } from './router.js';
 import { HttpError, errorResponse } from './lib/http.js';
 import { authenticate, loadSession } from './lib/auth.js';
-import { slugFromPath, businessBySlug, defaultSlug, isMember } from './lib/tenant.js';
+import { slugFromPath, businessBySlug, defaultSlug, isMember, isResident, homePath } from './lib/tenant.js';
 import * as authApi from './api/auth.js';
 import * as platformApi from './api/platform.js';
 import * as businessApi from './api/business.js';
@@ -18,10 +18,11 @@ import * as petsApi from './api/pets.js';
 import * as noticesApi from './api/notices.js';
 import * as filesApi from './api/files.js';
 import * as aiApi from './api/ai.js';
+import * as portalApi from './api/portal.js';
 
 const router = new Router();
 // platform va antes que cualquier ruta con parámetros de negocio.
-for (const mod of [platformApi, authApi, businessApi, dashboardApi, propertiesApi, unitsApi, billingApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi]) {
+for (const mod of [platformApi, authApi, businessApi, dashboardApi, propertiesApi, unitsApi, billingApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi, portalApi]) {
   mod.routes(router);
 }
 
@@ -76,7 +77,21 @@ async function handleBusinessPath(req, env, url, slug) {
   if (rest === '/admin' || rest.startsWith('/admin/')) {
     if (rest.startsWith('/admin/assets/')) return assetAt(env, req, rest);
     const page = rest.replace(/\.html$/, '').replace(/\/$/, '');
-    if (page !== '/admin/login' && !(await loadSession(req, env))) {
+    if (page !== '/admin/login') {
+      const session = await loadSession(req, env);
+      if (!session) {
+        return Response.redirect(`${url.origin}/${slug}/admin/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
+      }
+      // Propietarios y residentes (sin membresía) no entran al panel: van a su portal.
+      if (!(await isMember(env, session.user_id, slug)) && (await isResident(env, session.user_id, slug))) {
+        return Response.redirect(`${url.origin}/${slug}/portal/`, 302);
+      }
+    }
+    return keepPrefix(await assetAt(env, req, rest), `/${slug}`, url);
+  }
+  // Portal de propietarios: /<slug>/portal/… (los datos los filtra la API por las unidades de la persona).
+  if (rest === '/portal' || rest.startsWith('/portal/')) {
+    if (!(await loadSession(req, env))) {
       return Response.redirect(`${url.origin}/${slug}/admin/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
     }
     return keepPrefix(await assetAt(env, req, rest), `/${slug}`, url);
@@ -101,6 +116,9 @@ async function handleLegacyAdmin(req, env, url) {
   if (slug && session && !(await isMember(env, session.user_id, slug))) slug = null;
   if (!slug && session) slug = await defaultSlug(env, session);
   if (slug) return Response.redirect(`${url.origin}/${slug}${url.pathname}${url.search}`, 302);
+  // Sin panel pero con unidades: a su portal.
+  const home = session && (await homePath(env, session));
+  if (home) return Response.redirect(`${url.origin}${home}`, 302);
   if (!session) {
     // El login genérico vive en la raíz "/". /admin/login (también con #invite=…) redirige ahí:
     // el navegador conserva el fragmento.
@@ -127,13 +145,16 @@ export default {
       if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
         return withHeaders(await handleLegacyAdmin(req, env, url), SECURITY_HEADERS);
       }
+      // /portal sin negocio: al de la persona (o al login).
+      if (url.pathname === '/portal' || url.pathname.startsWith('/portal/')) {
+        const session = await loadSession(req, env);
+        const home = session && (await homePath(env, session));
+        return Response.redirect(`${url.origin}${home || '/'}`, 302);
+      }
       // Raíz: login genérico (sin negocio en la URL). Con sesión, directo a su negocio.
       if (url.pathname === '/') {
         const session = await loadSession(req, env);
-        if (session) {
-          const s = await defaultSlug(env, session);
-          return Response.redirect(`${url.origin}${s ? `/${s}` : ''}/admin/`, 302);
-        }
+        if (session) return Response.redirect(`${url.origin}${(await homePath(env, session)) || '/admin/'}`, 302);
         return withHeaders(await assetAt(env, req, '/admin/login'), SECURITY_HEADERS);
       }
       const slug = slugFromPath(url.pathname);

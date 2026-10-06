@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mascotas · Portal de residentes</title>
+  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <link rel="expect" href="#cdr-ready" blocking="render">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1200px">
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+      <div>
+        <div class="eyebrow">Censo de mascotas</div>
+        <h1 class="page-title">Mis mascotas</h1>
+        <p class="page-sub">Regístralas con su foto y la fecha de vacunación, como lo pide el reglamento del conjunto.</p>
+      </div>
+      <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Registrar mascota</button>
+    </div>
+    <div class="row g-3" id="list"></div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      const me = await App.initPortal('mascotas');
+      if (!me) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const SPECIES = { perro: 'Perro', gato: 'Gato', ave: 'Ave', otro: 'Otro' };
+      const ICON = { perro: '🐕', gato: '🐈', ave: '🦜', otro: '🐾' };
+      const fileUrl = (id) => `/api/portal/files/${id}?b=${App.slug}`;
+      let items = [];
+
+      const FIELDS = () => `
+        <div class="row g-2">
+          ${me.units.length > 1 ? `<div class="col-12"><label class="form-label small">Unidad</label><select name="unit_id" class="form-select">${me.units.map((u) => `<option value="${esc(u.id)}">${esc(u.label)} · ${esc(u.property_name)}</option>`).join('')}</select></div>` : ''}
+          <div class="col-sm-6"><label class="form-label small">Nombre *</label><input name="name" class="form-control" required maxlength="80"></div>
+          <div class="col-sm-6"><label class="form-label small">Especie</label><select name="species" class="form-select">${Object.entries(SPECIES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+          <div class="col-sm-6"><label class="form-label small">Raza</label><input name="breed" class="form-control" maxlength="80" placeholder="Criollo, Labrador…"></div>
+          <div class="col-sm-6"><label class="form-label small">Vacunas al día hasta</label><input name="vaccinated_until" type="date" class="form-control"></div>
+          <div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" name="potentially_dangerous" id="pd"><label class="form-check-label small" for="pd">Raza potencialmente peligrosa (Ley 1801 de 2016)</label></div></div>
+          <div class="col-12"><label class="form-label small">Observaciones</label><textarea name="notes" class="form-control" rows="2" maxlength="1000"></textarea></div>
+          <div class="col-12"><label class="form-label small">Foto o carné de vacunas</label><input name="photo" type="file" class="form-control" accept="image/*"></div>
+        </div>`;
+
+      async function load() {
+        try { ({ items } = await App.api('/pets')); } catch (err) { return App.fail(err); }
+        const today = App.todayLocal();
+        $('list').innerHTML = items.map((p) => {
+          const vac = !p.vaccinated_until ? App.badge('Sin vacunas registradas', 'secondary') : p.vaccinated_until < today ? App.badge(`Vacunas vencidas · ${App.fmtDate(p.vaccinated_until)}`, 'danger') : App.badge(`Vacunas al día · ${App.fmtDate(p.vaccinated_until)}`, 'success');
+          return `<div class="col-md-6 col-xl-4"><div class="card h-100"><div class="card-body d-flex gap-3">
+            ${p.photo_id ? `<a href="${fileUrl(p.photo_id)}" target="_blank" rel="noopener"><img class="pet-photo" src="${fileUrl(p.photo_id)}" alt="${esc(p.name)}"></a>` : `<div class="pet-photo">${ICON[p.species] || '🐾'}</div>`}
+            <div class="flex-grow-1 min-w-0">
+              <div class="d-flex justify-content-between gap-2"><div class="fw-bold">${esc(p.name)}</div>
+                <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(p.id)}" aria-label="Editar"><i class="bi bi-pencil"></i></button></div>
+              <div class="small text-body-secondary">${esc(SPECIES[p.species])}${p.breed ? ' · ' + esc(p.breed) : ''}${me.units.length > 1 ? ' · ' + esc(App.unitLabel(p)) : ''}</div>
+              <div class="mt-2 d-flex flex-wrap gap-1">${vac}${p.potentially_dangerous ? App.badge('Potencialmente peligrosa', 'warning') : ''}</div>
+              ${p.notes ? `<div class="small mt-2">${esc(p.notes)}</div>` : ''}
+            </div></div></div></div>`;
+        }).join('') || `<div class="col-12"><div class="card"><div class="empty"><div class="fs-1">🐾</div>No tienes mascotas registradas.</div></div></div>`;
+      }
+
+      async function upload(id, file) {
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        await App.api(`/pets/${id}/photo`, { method: 'POST', form: fd });
+      }
+
+      function edit(p) {
+        const dlg = App.formDialog({
+          title: p ? `Editar · ${p.name}` : 'Registrar mascota',
+          fields: FIELDS(),
+          data: p || { species: 'perro', unit_id: App.currentUnit() },
+          extraFooter: p ? '<button type="button" class="btn btn-outline-danger me-auto" data-del><i class="bi bi-trash"></i></button>' : '',
+          onSave: async (d, form) => {
+            const { photo, ...body } = d;
+            const file = form.elements.photo.files[0];
+            const id = p ? p.id : (await App.api('/pets', { method: 'POST', body })).id;
+            if (p) await App.api(`/pets/${p.id}`, { method: 'PUT', body: { ...body, unit_id: undefined } });
+            await upload(id, file);
+            App.toast(p ? 'Cambios guardados' : 'Mascota registrada');
+            load();
+          },
+        });
+        dlg.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+          if (!(await App.confirmAction(`¿Quitar a ${p.name} del registro?`))) return;
+          try { await App.api(`/pets/${p.id}`, { method: 'DELETE' }); dlg.hide(); App.toast('Mascota retirada'); load(); } catch (err) { App.fail(err); }
+        });
+      }
+
+      $('list').addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-edit]');
+        if (b) edit(items.find((p) => p.id === b.dataset.edit));
+      });
+      $('newBtn').addEventListener('click', () => edit(null));
+      await load();
+      if (App.param('new')) edit(null);
+    })();
+  </script>
+  <span id="cdr-ready" hidden></span>
+</body>
+</html>

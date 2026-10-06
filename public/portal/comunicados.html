@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comunicados · Portal de residentes</title>
+  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
+  <link rel="expect" href="#cdr-ready" blocking="render">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/admin/assets/app.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:900px">
+    <div class="mb-3">
+      <div class="eyebrow">Circulares de la administración</div>
+      <h1 class="page-title">Comunicados <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
+      <p class="page-sub">Avisos de mantenimiento, asambleas, seguridad y convivencia de tu conjunto.</p>
+    </div>
+    <div class="card mb-3">
+      <div class="filters">
+        <input id="q" class="form-control grow" type="search" placeholder="Buscar…" aria-label="Buscar">
+        <select id="cat" class="form-select"><option value="">Categoría: todas</option></select>
+      </div>
+    </div>
+    <div id="list"></div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/admin/assets/app.js"></script>
+  <script>
+    (async () => {
+      if (!(await App.initPortal('comunicados'))) return;
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const CAT = { mantenimiento: 'warning', seguridad: 'danger', servicios: 'info', asamblea: 'primary', convivencia: 'success', finanzas: 'secondary', general: 'secondary' };
+      const ICON = { mantenimiento: 'bi-tools', seguridad: 'bi-shield-check', servicios: 'bi-droplet', asamblea: 'bi-people', convivencia: 'bi-emoji-smile', finanzas: 'bi-cash-coin', general: 'bi-megaphone' };
+      $('cat').innerHTML += Object.keys(CAT).map((k) => `<option value="${k}">${k[0].toUpperCase() + k.slice(1)}</option>`).join('');
+      let items = [];
+      try { ({ items } = await App.api('/notices')); } catch (err) { return App.fail(err); }
+
+      function render() {
+        const q = $('q').value.trim().toLowerCase();
+        const cat = $('cat').value;
+        const rows = items.filter((n) => (!cat || n.category === cat) && (!q || `${n.title} ${n.body}`.toLowerCase().includes(q)));
+        $('count').textContent = `(${rows.length})`;
+        $('list').innerHTML = rows.map((n) => `
+          <article class="card mb-3" id="${esc(n.id)}">
+            <div class="card-body">
+              <div class="d-flex gap-3">
+                <div class="kpi"><div class="kpi-icon"><i class="bi ${ICON[n.category] || 'bi-megaphone'}"></i></div></div>
+                <div class="flex-grow-1 min-w-0">
+                  <div class="d-flex flex-wrap justify-content-between gap-2">
+                    <h2 class="h6 fw-bold mb-1">${esc(n.title)}</h2>
+                    <span class="small text-body-secondary">${App.fmtDate(n.created_at, { weekday: true })}</span>
+                  </div>
+                  <div class="mb-2">${App.badge(n.category, CAT[n.category])} <span class="small text-body-secondary">${esc(n.property_name || 'Todos los conjuntos')}</span></div>
+                  <div class="notice-body small">${esc(n.body)}</div>
+                  ${n.files ? `<div class="mt-2" data-files="${esc(n.id)}"><button class="btn btn-sm btn-outline-secondary" data-load-files="${esc(n.id)}"><i class="bi bi-paperclip me-1"></i>Ver adjuntos (${n.files})</button></div>` : ''}
+                </div>
+              </div>
+            </div>
+          </article>`).join('') || '<div class="card"><div class="empty">No hay comunicados.</div></div>';
+      }
+
+      $('list').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('[data-load-files]');
+        if (!b) return;
+        try {
+          const { items: files } = await App.api(`/notices/${b.dataset.loadFiles}/files`);
+          b.parentElement.innerHTML = files.map((f) => `<a class="file-chip me-2" href="/api/portal/files/${esc(f.id)}?b=${App.slug}" target="_blank" rel="noopener">
+            <i class="bi ${f.content_type === 'application/pdf' ? 'bi-file-earmark-pdf' : 'bi-image'} me-1"></i>${esc(f.name)}</a>`).join('');
+        } catch (err) { App.fail(err); }
+      });
+      $('q').addEventListener('input', render);
+      $('cat').addEventListener('change', render);
+      render();
+      // Enlace directo desde Inicio (#id): lleva al comunicado.
+      if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'start' });
+    })();
+  </script>
+  <span id="cdr-ready" hidden></span>
+</body>
+</html>

@@ -2,15 +2,17 @@
 'use strict';
 
 const App = (() => {
-  const API = '/api/admin';
   // Multi-tenant por ruta: el panel vive en /<slug>/admin y la API recibe el negocio en x-business.
-  const SLUG = (location.pathname.match(/^\/([a-z0-9-]+)\/admin(?:\/|$)/) || [])[1] || null;
+  // El portal de propietarios vive en /<slug>/portal y usa /api/portal (las rutas /auth/* son comunes).
+  const PORTAL = /^\/[a-z0-9-]+\/portal(?:\/|$)/.test(location.pathname);
+  const API = PORTAL ? '/api/portal' : '/api/admin';
+  const SLUG = (location.pathname.match(/^\/([a-z0-9-]+)\/(?:admin|portal)(?:\/|$)/) || [])[1] || null;
   const BASE = SLUG ? `/${SLUG}/admin` : '/admin';
   // Login: el del negocio (/<slug>/admin/login) o el genérico en la raíz "/".
   const LOGIN = SLUG ? `${BASE}/login` : '/';
   const onLogin = () => location.pathname === '/' || location.pathname.startsWith(`${BASE}/login`);
   // Enlaces del panel con el negocio en la ruta: /admin/x -> /<slug>/admin/x (sin el 302 del servidor en cada clic).
-  const link = (path) => (SLUG && /^\/admin(\/|$|\?)/.test(path) && !path.startsWith('/admin/assets/') ? `/${SLUG}${path}` : path);
+  const link = (path) => (SLUG && /^\/(admin|portal)(\/|$|\?)/.test(path) && !path.startsWith('/admin/assets/') ? `/${SLUG}${path}` : path);
   const go = (path) => { location.href = link(path); };
   let me = null;
   let properties = [];
@@ -145,7 +147,7 @@ const App = (() => {
     const a = ev.target.closest('a[href]');
     if (!a) return;
     const href = a.getAttribute('href');
-    if (href.startsWith('/admin')) a.setAttribute('href', link(href));
+    if (href.startsWith('/admin') || href.startsWith('/portal')) a.setAttribute('href', link(href));
     if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || a.target === '_blank' || href.startsWith('#')) return;
     if (new URL(a.href).origin === location.origin && !a.href.includes('/api/')) progressBar()?.classList.add('on');
   });
@@ -165,7 +167,7 @@ const App = (() => {
     progress(1);
     let res, data;
     try {
-      res = await fetch(API + path, { method, headers, body: payload, credentials: 'same-origin' });
+      res = await fetch((path.startsWith('/auth/') ? '/api/admin' : API) + path, { method, headers, body: payload, credentials: 'same-origin' });
       data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
     } finally {
       progress(-1);
@@ -176,7 +178,7 @@ const App = (() => {
         location.href = `${LOGIN}?next=` + encodeURIComponent(location.pathname + location.search);
         return new Promise(() => {});
       }
-      if (data?.code === 'NOT_MEMBER' || (data?.code === 'NO_BUSINESS' && SLUG)) {
+      if (['NOT_MEMBER', 'NOT_RESIDENT'].includes(data?.code) || (data?.code === 'NO_BUSINESS' && SLUG)) {
         location.href = '/admin/';  // a su propio negocio (lo resuelve el servidor)
         return new Promise(() => {});
       }
@@ -619,6 +621,7 @@ const App = (() => {
           <ul class="dropdown-menu dropdown-menu-end shadow-sm">
             ${switcher}
             <li><span class="dropdown-item-text small text-body-secondary">${esc(me.name || '')}<br>${esc(me.email)} · ${esc(ROLE[s.role] || '')}</span></li>
+            ${(me.portals || []).map((p) => `<li><a class="dropdown-item" href="/${esc(p.slug)}/portal/"><i class="bi bi-house-heart me-2"></i>Mi portal · ${esc(p.name)}</a></li>`).join('')}
             <li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>
             <li><button class="dropdown-item" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
           </ul>
@@ -675,11 +678,11 @@ const App = (() => {
     } else if (!on && ro) ro.remove();
   }
 
-  function changePasswordDialog() {
+  function changePasswordDialog(mail = me.email) {
     formDialog({
       title: 'Cambiar contraseña',
       fields: `
-        <input type="email" class="d-none" value="${esc(me.email)}" autocomplete="username">
+        <input type="email" class="d-none" value="${esc(mail)}" autocomplete="username">
         <label class="form-label">Contraseña actual</label>
         <input name="currentPassword" type="password" class="form-control mb-3" required autocomplete="current-password">
         <label class="form-label">Contraseña nueva (mínimo 8 caracteres)</label>
@@ -777,10 +780,146 @@ const App = (() => {
     return me;
   }
 
+  // ---------- portal de propietarios (/<slug>/portal) ----------
+  // me = { user, business, units, concepts, billing, portals, isStaff, readOnly }
+
+  const PORTAL_NAV = [
+    ['inicio', '/portal/', 'bi-house', 'Inicio'],
+    ['comunicados', '/portal/comunicados', 'bi-megaphone', 'Comunicados'],
+    ['cartera', '/portal/cartera', 'bi-cash-stack', 'Mi cartera'],
+    ['unidad', '/portal/unidad', 'bi-building', 'Mi unidad'],
+    ['mascotas', '/portal/mascotas', 'bi-heart', 'Mascotas'],
+    ['reservas', '/portal/reservas', 'bi-calendar2-week', 'Reservas'],
+  ];
+  const PORTAL_BOTTOM = ['inicio', 'cartera', 'reservas', 'comunicados'];
+  const RELATION = { owner: 'Propietario', tenant: 'Residente' };
+  const unitListeners = [];
+  const unitKey = () => `cdr_unit_${SLUG || 'default'}`;
+  // Unidad activa del portal (la persona puede tener varias).
+  function currentUnit() {
+    const units = me?.units || [];
+    const id = store.get(unitKey());
+    return units.some((u) => u.id === id) ? id : units[0]?.id || '';
+  }
+  const unitInfo = (id = currentUnit()) => (me?.units || []).find((u) => u.id === id) || null;
+  function setUnit(id) {
+    store.set(unitKey(), id);
+    document.querySelectorAll('[data-unit-select]').forEach((s) => (s.value = id));
+    unitListeners.forEach((fn) => fn(id));
+  }
+  const onUnit = (fn) => unitListeners.push(fn);
+
+  function renderPortalShell(active) {
+    const b = me.business;
+    const u = unitInfo();
+    const sideHtml = `
+      <a class="side-brand" href="${link('/portal/')}">
+        <span class="side-logo">${b.logo ? `<img src="${esc(b.logo)}" alt="">` : BRAND_SVG}</span>
+        <span><span class="d-block fw-bold text-truncate" style="max-width:9rem">${esc(b.name)}</span><span class="side-sub">Portal de residentes</span></span>
+      </a>
+      <div class="side-label">Mi copropiedad</div>
+      ${PORTAL_NAV.map(([key, href, icon, text]) => `<a class="side-link ${key === active ? 'active' : ''}" href="${link(href)}" ${key === active ? 'aria-current="page"' : ''}>
+        <i class="bi ${icon}"></i><span>${text}</span></a>`).join('')}
+      ${me.isStaff ? `<div class="side-label">Administración</div><a class="side-link" href="${link('/admin/')}"><i class="bi bi-speedometer2"></i><span>Ir al panel</span></a>` : ''}
+      <div class="side-foot">
+        <div class="small fw-semibold text-truncate">${esc(u ? `${u.label} · ${u.property_name}` : '')}</div>
+        <div class="small text-body-secondary text-truncate">${esc(me.user.name || me.user.email)} · ${esc(RELATION[u?.relation] || '')}</div>
+      </div>`;
+    const unitPick = me.units.length > 1
+      ? `<label class="prop-pick ms-md-auto"><span class="d-none d-sm-inline small text-body-secondary me-1">Unidad:</span>
+          <select class="form-select form-select-sm" data-unit-select aria-label="Unidad">${me.units.map((x) => `<option value="${esc(x.id)}" ${x.id === currentUnit() ? 'selected' : ''}>${esc(x.label)} · ${esc(x.property_name)}</option>`).join('')}</select></label>`
+      : `<div class="ms-md-auto small text-body-secondary text-truncate">${esc(u ? `${u.label} · ${u.property_name}` : '')}</div>`;
+    const others = (me.portals || []).filter((p) => p.slug !== SLUG);
+    const shell = document.createElement('div');
+    shell.innerHTML = `
+      <aside class="side d-none d-lg-flex">${sideHtml}</aside>
+      <div class="offcanvas offcanvas-start side-off" tabindex="-1" id="sideMenu"><div class="offcanvas-body p-0 d-flex">
+        <aside class="side d-flex position-static w-100">${sideHtml}</aside></div></div>
+      <header class="topbar">
+        <button class="btn btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-label="Menú"><i class="bi bi-list"></i></button>
+        <div class="top-title d-none d-md-block">${esc(PORTAL_NAV.find(([k]) => k === active)?.[3] || '')}</div>
+        ${unitPick}
+        <div class="dropdown">
+          <button class="btn btn-icon dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Cuenta">
+            <span class="avatar avatar-sm">${esc(initials(me.user.name || me.user.email))}</span></button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+            ${others.length ? `<li><h6 class="dropdown-header">Otras copropiedades</h6></li>${others.map((p) => `<li><a class="dropdown-item" href="/${esc(p.slug)}/portal/">${esc(p.name)}</a></li>`).join('')}<li><hr class="dropdown-divider"></li>` : ''}
+            <li><span class="dropdown-item-text small text-body-secondary">${esc(me.user.name || '')}<br>${esc(me.user.email)}</span></li>
+            <li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>
+            <li><button class="dropdown-item" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
+          </ul>
+        </div>
+      </header>`;
+    while (shell.firstChild) document.body.prepend(shell.lastChild);
+    document.body.classList.add('has-side', 'portal');
+    if (!('onpagereveal' in window)) document.querySelector('main')?.classList.add('cdr-enter');
+    document.querySelectorAll('a[href^="/portal"]').forEach((a) => a.setAttribute('href', link(a.getAttribute('href'))));
+
+    const bar = document.createElement('nav');
+    bar.className = 'bottom-nav';
+    bar.setAttribute('aria-label', 'Secciones');
+    bar.innerHTML = PORTAL_BOTTOM.map((key) => {
+      const [, href, icon, label] = PORTAL_NAV.find(([k]) => k === key);
+      return `<a href="${link(href)}" class="${key === active ? 'active' : ''}"><i class="bi ${icon}"></i><span>${label}</span></a>`;
+    }).join('') + `<button type="button" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" class="${PORTAL_BOTTOM.includes(active) ? '' : 'active'}"><i class="bi bi-grid"></i><span>Más</span></button>`;
+    document.body.appendChild(bar);
+    document.body.classList.add('has-bottom-nav');
+    setReadOnly(me.readOnly);
+
+    document.querySelectorAll('[data-unit-select]').forEach((sel) => sel.addEventListener('change', () => {
+      setUnit(sel.value);
+      const x = unitInfo();
+      document.querySelectorAll('.side-foot .fw-semibold').forEach((el) => (el.textContent = x ? `${x.label} · ${x.property_name}` : ''));
+    }));
+    document.body.addEventListener('click', async (ev) => {
+      const a = ev.target.closest('[data-action]');
+      if (a?.dataset.action === 'logout') {
+        await api('/auth/logout', { method: 'POST' }).catch(() => {});
+        clearShell();
+        location.href = '/';
+      } else if (a?.dataset.action === 'change-password') {
+        changePasswordDialog(me.user.email);
+      }
+    });
+  }
+
+  async function initPortal(active) {
+    const key = `cdr_shell_portal_${SLUG}`;
+    let cached = null;
+    try { cached = JSON.parse(sessionStorage.getItem(key)); } catch { /* sin almacenamiento */ }
+    const fetchMe = async () => {
+      const fresh = await api('/me');
+      try { sessionStorage.setItem(key, JSON.stringify(fresh)); } catch { /* sin almacenamiento */ }
+      return fresh;
+    };
+    if (cached?.units?.length) {
+      me = cached;
+      renderPortalShell(active);
+      fetchMe().then((fresh) => {
+        const sig = (m) => JSON.stringify([m.units, m.business, m.isStaff]);
+        if (sig(fresh) !== sig(me)) location.reload();
+        else { me = fresh; setReadOnly(fresh.readOnly); }
+      }).catch(() => {});
+    } else {
+      me = await fetchMe();
+      renderPortalShell(active);
+    }
+    if (SLUG && HTMLScriptElement.supports?.('speculationrules')) {
+      const sr = document.createElement('script');
+      sr.type = 'speculationrules';
+      sr.textContent = JSON.stringify({ prefetch: [{ where: { href_matches: `/${SLUG}/portal/*` }, eagerness: 'moderate' }] });
+      document.head.appendChild(sr);
+    }
+    return me;
+  }
+
+  // Conceptos de cartera a mostrar en el portal: los activos + los que la unidad tenga con saldo.
+  const portalConcepts = (pending = {}) => CONCEPT_ORDER.filter((k) => k === 'admin' || (me?.billing?.concepts || CONCEPT_ORDER).includes(k) || pending[k] > 0);
+
   const canManage = () => ['owner', 'admin'].includes(me?.session?.role);
 
   return {
-    api, qs, init, link, go, clearShell, toast, dataTable, billingInfo, shownConcepts, activeConcepts, CONCEPT_ORDER, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
+    api, qs, init, initPortal, currentUnit, unitInfo, setUnit, onUnit, portalConcepts, RELATION, portal: PORTAL, link, go, clearShell, toast, dataTable, billingInfo, shownConcepts, activeConcepts, CONCEPT_ORDER, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
     onSubmit, formData, fillForm, confirmAction, param, badge, canManage,
     fmtDate, fmtTime, fmtDateTime, fmtMonth, fmtNum, money, moneyShort, unitLabel, initials, daysSince, todayLocal, addDays,
     currentProperty, setProperty, onProperty, propertyOptions, propertyName,

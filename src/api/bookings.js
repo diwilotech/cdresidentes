@@ -33,7 +33,7 @@ const BOOKING = {
 };
 
 // Valor de la reserva según la tarifa de la zona.
-function priceFor(amenity, start, end) {
+export function priceFor(amenity, start, end) {
   if (amenity.fee_unit === 'hora') {
     const mins = (h) => +h.slice(0, 2) * 60 + +h.slice(3);
     return Math.round((amenity.fee * Math.max(0, mins(end) - mins(start))) / 60);
@@ -41,7 +41,7 @@ function priceFor(amenity, start, end) {
   return amenity.fee;
 }
 
-async function assertFree(c, data, exceptId = '') {
+export async function assertFree(c, data, exceptId = '') {
   if (data.end_time <= data.start_time) throw new HttpError(400, 'La hora de fin debe ser después del inicio');
   const clash = await tenantDb(c).first(
     `SELECT 1 FROM bookings WHERE business_id = ? AND amenity_id = ? AND date = ? AND id <> ?

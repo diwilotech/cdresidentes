@@ -27,6 +27,12 @@ export function routes(r) {
         readOnly: s.read_only, paidUntil: s.paid_until || null,
       },
       businesses: await userBusinesses(c.env, c.user),
+      // Administraciones donde además es propietario/residente (enlace a su portal).
+      portals: await globalDb(c.env).all(
+        `SELECT DISTINCT b.name, b.slug FROM residents r JOIN businesses b ON b.id = r.business_id
+          WHERE r.user_id = ? AND b.status = 'active' ORDER BY b.name`,
+        c.user.id,
+      ),
     });
   });
 
