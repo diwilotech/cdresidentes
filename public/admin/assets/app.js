@@ -885,7 +885,7 @@ const App = (() => {
     const unitPick = me.units.length > 1
       ? `<label class="prop-pick"><i class="bi bi-house-door"></i>
           <select class="form-select form-select-sm" data-unit-select aria-label="Unidad">${me.units.map((x) => `<option value="${esc(x.id)}" ${x.id === currentUnit() ? 'selected' : ''}>${esc(x.label)} · ${esc(x.property_name)}</option>`).join('')}</select></label>`
-      : `<div class="prop-pick"><i class="bi bi-house-door"></i><span class="small fw-bold text-truncate pe-2">${esc(u ? `${u.label} · ${u.property_name}` : '')}</span></div>`;
+      : `<div class="prop-pick"><i class="bi bi-house-door"></i><span class="small fw-bold text-truncate pe-2">${esc(u?.label || '')}<span class="d-none d-md-inline"> · ${esc(u?.property_name || '')}</span></span></div>`;
     const others = (me.portals || []).filter((p) => p.slug !== SLUG);
     const shell = document.createElement('div');
     shell.innerHTML = `

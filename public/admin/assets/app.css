@@ -133,6 +133,8 @@ h1, h2, h3, h4, h5, .page-title, .modal-title { letter-spacing: -.015em; font-we
 .prop-pick { flex: 0 1 auto; display: flex; align-items: center; gap: .4rem; margin: 0; min-width: 0; padding: .2rem .35rem .2rem .7rem;
   border: 1.5px solid var(--cdr-accent); border-radius: .7rem; background: var(--cdr-accent-soft); color: var(--cdr-accent-dark); }
 [data-bs-theme="dark"] .prop-pick { color: var(--cdr-accent); }
+.prop-pick > * { min-width: 0; }
+.prop-pick > i { flex: none; }
 .prop-pick .form-select { width: auto; max-width: 18rem; font-weight: 700; border: 0; background-color: transparent; color: inherit; box-shadow: none; padding-top: .15rem; padding-bottom: .15rem; }
 .prop-pick.need { border-color: var(--bs-warning); background: rgba(var(--bs-warning-rgb), .14); color: var(--bs-warning-text-emphasis); animation: cdr-attn 1.8s infinite; }
 @keyframes cdr-attn { 50% { box-shadow: 0 0 0 5px rgba(var(--bs-warning-rgb), .22); } }
