@@ -126,9 +126,17 @@ h1, h2, h3, h4, h5, .page-title, .modal-title { letter-spacing: -.015em; font-we
   padding: .55rem 1rem; background: color-mix(in srgb, var(--cdr-bg) 88%, transparent); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--cdr-line);
 }
+.top-start, .top-end { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: .4rem; }
+.top-end { justify-content: flex-end; }
 .top-title { font-weight: 800; font-size: 1.05rem; }
-.prop-pick { display: flex; align-items: center; margin: 0 0 0 auto; min-width: 0; }
-.prop-pick .form-select { max-width: 15rem; font-weight: 600; }
+/* Conjunto activo: al centro de la barra y resaltado; sin elegir, en ámbar. */
+.prop-pick { flex: 0 1 auto; display: flex; align-items: center; gap: .4rem; margin: 0; min-width: 0; padding: .2rem .35rem .2rem .7rem;
+  border: 1.5px solid var(--cdr-accent); border-radius: .7rem; background: var(--cdr-accent-soft); color: var(--cdr-accent-dark); }
+[data-bs-theme="dark"] .prop-pick { color: var(--cdr-accent); }
+.prop-pick .form-select { width: auto; max-width: 18rem; font-weight: 700; border: 0; background-color: transparent; color: inherit; box-shadow: none; padding-top: .15rem; padding-bottom: .15rem; }
+.prop-pick.need { border-color: var(--bs-warning); background: rgba(var(--bs-warning-rgb), .14); color: var(--bs-warning-text-emphasis); animation: cdr-attn 1.8s infinite; }
+@keyframes cdr-attn { 50% { box-shadow: 0 0 0 5px rgba(var(--bs-warning-rgb), .22); } }
+@media (max-width: 575.98px) { .prop-pick { padding-left: .5rem; } .prop-pick .form-select { max-width: 13.5rem; padding-left: .25rem; } }
 @media (min-width: 992px) { body.has-side { padding-left: 248px; } }
 .readonly-bar { position: sticky; top: 53px; z-index: 1019; }
 

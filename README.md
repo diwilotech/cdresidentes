@@ -51,7 +51,10 @@ migrations/           esquema D1
 | Diwilo AI | Chat con historial por usuario. Cada respuesta se arma con un resumen en vivo (cartera y deudores, PQRS, portería, reservas, mascotas, comunicados) del negocio o del conjunto activo. Los borradores entre `---INICIO---`/`---FIN---` se pueden publicar como comunicado o enviar por WhatsApp |
 | Ajustes | Datos y logo de la administración, instancia de WhatsApp, **Cartera y cuenta de cobro** (formato del PDF, día de vencimiento, % de interés y su base, % y días del cobro jurídico, % de retroactivo, reparto y cuotas de extraordinarias, nota al pie), equipo con links de invitación, pruebas de WhatsApp y correo |
 
-El selector **Conjunto** de la barra superior filtra todas las páginas (se recuerda en el navegador).
+El selector **Conjunto** va al centro de la barra superior y no tiene opción "todos": para no registrar nada en el conjunto
+equivocado, Propietarios, Cartera, Portería, PQRS, Reservas, Mascotas y Comunicados piden elegir uno antes de mostrarse
+(con un solo conjunto se elige solo). **Inicio** sin conjunto muestra los conjuntos con sus totales para escoger; con conjunto,
+las estadísticas de ese conjunto (y "Ver todos los conjuntos" para volver). El conjunto elegido se recuerda en el navegador.
 
 ## Portal de propietarios
 

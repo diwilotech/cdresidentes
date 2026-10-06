@@ -210,8 +210,11 @@ const App = (() => {
 
   const propKey = () => `cdr_property_${SLUG || 'default'}`;
   function currentProperty() {
+    const active = properties.filter((p) => p.status === 'active');
     const id = store.get(propKey());
-    return id && properties.some((p) => p.id === id) ? id : '';
+    if (id && active.some((p) => p.id === id)) return id;
+    // Con un solo conjunto no hay nada que elegir.
+    return active.length === 1 ? active[0].id : '';
   }
   const propertyName = (id) => properties.find((p) => p.id === id)?.name || '';
   function setProperty(id) {
@@ -220,6 +223,15 @@ const App = (() => {
     propertyListeners.forEach((fn) => fn(id || ''));
   }
   const onProperty = (fn) => propertyListeners.push(fn);
+
+  // Selector de la barra superior: obliga a elegir un conjunto (no hay "todos") para no digitar en el equivocado.
+  const topPropertyOptions = () => `<option value="" disabled ${currentProperty() ? '' : 'selected'}>Selecciona un conjunto</option>` + propertyOptions(currentProperty());
+  function refreshPropertySelects() {
+    document.querySelectorAll('[data-property-select]').forEach((s) => {
+      s.innerHTML = topPropertyOptions();
+      s.closest('.prop-pick')?.classList.toggle('need', !currentProperty());
+    });
+  }
 
   // <option> de conjuntos para formularios.
   const propertyOptions = (selected = currentProperty(), { blank = false } = {}) =>
@@ -616,13 +628,15 @@ const App = (() => {
       <div class="offcanvas offcanvas-start side-off" tabindex="-1" id="sideMenu"><div class="offcanvas-body p-0 d-flex">
         <aside class="side d-flex position-static w-100">${sideHtml}</aside></div></div>
       <header class="topbar">
-        <button class="btn btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-label="Menú"><i class="bi bi-list"></i></button>
-        <div class="top-title d-none d-md-block">${esc(title || all.find(([k]) => k === active)?.[3] || '')}</div>
-        <label class="prop-pick ms-md-auto">
-          <span class="d-none d-sm-inline small text-body-secondary me-1">Conjunto:</span>
-          <select class="form-select form-select-sm" data-property-select aria-label="Conjunto activo">${propertyOptions(currentProperty(), { blank: true })}</select>
+        <div class="top-start">
+          <button class="btn btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-label="Menú"><i class="bi bi-list"></i></button>
+          <div class="top-title d-none d-md-block text-truncate">${esc(title || all.find(([k]) => k === active)?.[3] || '')}</div>
+        </div>
+        <label class="prop-pick ${currentProperty() ? '' : 'need'}">
+          <i class="bi bi-buildings"></i>
+          <select class="form-select form-select-sm" data-property-select aria-label="Conjunto activo">${topPropertyOptions()}</select>
         </label>
-        <div class="dropdown">
+        <div class="top-end"><div class="dropdown">
           <button class="btn btn-icon dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Cuenta">
             <span class="avatar avatar-sm">${esc(initials(me.name || me.email))}</span></button>
           <ul class="dropdown-menu dropdown-menu-end shadow-sm">
@@ -632,7 +646,7 @@ const App = (() => {
             <li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>
             <li><button class="dropdown-item" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
           </ul>
-        </div>
+        </div></div>
       </header>`;
     while (shell.firstChild) document.body.prepend(shell.lastChild);
     document.body.classList.add('has-side');
@@ -653,7 +667,13 @@ const App = (() => {
 
     setReadOnly(s.readOnly);
 
-    document.querySelectorAll('[data-property-select]').forEach((sel) => sel.addEventListener('change', () => setProperty(sel.value)));
+    document.querySelectorAll('[data-property-select]').forEach((sel) => sel.addEventListener('change', () => {
+      // La página estaba esperando un conjunto: se carga de nuevo con el elegido.
+      if (blocked) { store.set(propKey(), sel.value); location.reload(); return; }
+      setProperty(sel.value);
+      refreshPropertySelects();
+      toast(`Trabajando en ${propertyName(sel.value)}`, 'primary');
+    }));
     document.body.addEventListener('click', async (ev) => {
       const b = ev.target.closest('[data-business]');
       if (b && b.closest('.dropdown-menu')) {
@@ -745,9 +765,7 @@ const App = (() => {
       me = fresh;
       const changed = propsSig(props) !== propsSig(properties);
       properties = props;
-      if (changed) {
-        document.querySelectorAll('[data-property-select]').forEach((sel) => (sel.innerHTML = propertyOptions(currentProperty(), { blank: true })));
-      }
+      if (changed) refreshPropertySelects();
     } catch { /* sin conexión: queda lo de la caché */ }
   }
 
@@ -784,7 +802,39 @@ const App = (() => {
       businessPicker();
       return null;
     }
+    if (needsBusiness && !NO_PROPERTY.includes(active) && !currentProperty()) {
+      propertyPicker();
+      return null;
+    }
     return me;
+  }
+
+  // Páginas que funcionan sin conjunto elegido; las demás piden uno antes de mostrar o guardar nada.
+  const NO_PROPERTY = ['inicio', 'conjuntos', 'asistente', 'ajustes'];
+  let blocked = false;
+  function propertyPicker() {
+    blocked = true;
+    const main = document.querySelector('main');
+    const active = properties.filter((p) => p.status === 'active');
+    main.innerHTML = `
+      <div class="mx-auto mt-3" style="max-width:56rem">
+        <div class="eyebrow">Antes de continuar</div>
+        <h1 class="page-title mb-1">Selecciona un conjunto</h1>
+        <p class="page-sub mb-3">Todo lo que veas y registres en esta sección quedará en el conjunto que elijas.</p>
+        <div class="row g-3">${active.map((p) => `
+          <div class="col-md-6"><div class="card prop-card h-100" data-pick-prop="${esc(p.id)}"><div class="card-body d-flex gap-3 align-items-center">
+            <div class="prop-logo">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : '<i class="bi bi-building"></i>'}</div>
+            <div class="min-w-0"><div class="fw-bold text-truncate">${esc(p.name)}</div>
+              <div class="small text-body-secondary">${p.units ?? 0} unidades${p.overdue ? ` · vencido ${moneyShort(p.overdue)}` : ''}</div></div>
+            <i class="bi bi-chevron-right ms-auto text-body-secondary"></i></div></div></div>`).join('') ||
+          `<div class="col-12"><div class="card"><div class="empty">Aún no hay conjuntos. <a href="${link('/admin/conjuntos?new=1')}">Crea el primero</a>.</div></div></div>`}</div>
+      </div>`;
+    main.addEventListener('click', (ev) => {
+      const c = ev.target.closest('[data-pick-prop]');
+      if (!c) return;
+      store.set(propKey(), c.dataset.pickProp);
+      location.reload();
+    });
   }
 
   // ---------- portal de propietarios (/<slug>/portal) ----------
@@ -833,9 +883,9 @@ const App = (() => {
         <div class="small text-body-secondary text-truncate">${esc(me.user.name || me.user.email || '')} · ${esc(RELATION[u?.relation] || '')}</div>
       </div>`;
     const unitPick = me.units.length > 1
-      ? `<label class="prop-pick ms-md-auto"><span class="d-none d-sm-inline small text-body-secondary me-1">Unidad:</span>
+      ? `<label class="prop-pick"><i class="bi bi-house-door"></i>
           <select class="form-select form-select-sm" data-unit-select aria-label="Unidad">${me.units.map((x) => `<option value="${esc(x.id)}" ${x.id === currentUnit() ? 'selected' : ''}>${esc(x.label)} · ${esc(x.property_name)}</option>`).join('')}</select></label>`
-      : `<div class="ms-md-auto small text-body-secondary text-truncate">${esc(u ? `${u.label} · ${u.property_name}` : '')}</div>`;
+      : `<div class="prop-pick"><i class="bi bi-house-door"></i><span class="small fw-bold text-truncate pe-2">${esc(u ? `${u.label} · ${u.property_name}` : '')}</span></div>`;
     const others = (me.portals || []).filter((p) => p.slug !== SLUG);
     const shell = document.createElement('div');
     shell.innerHTML = `
@@ -843,10 +893,12 @@ const App = (() => {
       <div class="offcanvas offcanvas-start side-off" tabindex="-1" id="sideMenu"><div class="offcanvas-body p-0 d-flex">
         <aside class="side d-flex position-static w-100">${sideHtml}</aside></div></div>
       <header class="topbar">
-        <button class="btn btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-label="Menú"><i class="bi bi-list"></i></button>
-        <div class="top-title d-none d-md-block">${esc(PORTAL_NAV.find(([k]) => k === active)?.[3] || '')}</div>
+        <div class="top-start">
+          <button class="btn btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sideMenu" aria-label="Menú"><i class="bi bi-list"></i></button>
+          <div class="top-title d-none d-md-block text-truncate">${esc(PORTAL_NAV.find(([k]) => k === active)?.[3] || '')}</div>
+        </div>
         ${unitPick}
-        <div class="dropdown">
+        <div class="top-end"><div class="dropdown">
           <button class="btn btn-icon dropdown-toggle no-caret" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Cuenta">
             <span class="avatar avatar-sm">${esc(initials(me.user.name || me.user.email || '?'))}</span></button>
           <ul class="dropdown-menu dropdown-menu-end shadow-sm">
@@ -855,7 +907,7 @@ const App = (() => {
             ${me.user.email ? '<li><button class="dropdown-item" data-action="change-password"><i class="bi bi-key me-2"></i>Cambiar contraseña</button></li>' : ''}
             <li><button class="dropdown-item" data-action="logout"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</button></li>
           </ul>
-        </div>
+        </div></div>
       </header>`;
     while (shell.firstChild) document.body.prepend(shell.lastChild);
     document.body.classList.add('has-side', 'portal');
@@ -929,7 +981,7 @@ const App = (() => {
     api, qs, init, initPortal, currentUnit, unitInfo, setUnit, onUnit, portalConcepts, RELATION, portal: PORTAL, link, go, clearShell, toast, dataTable, billingInfo, shownConcepts, activeConcepts, CONCEPT_ORDER, onRowClick, loadScript, loadPdf, bindUnitSelect, slug: SLUG, base: BASE, fail, esc, md, modal, formDialog, inviteDialog, messageDialog, attachments,
     onSubmit, formData, fillForm, confirmAction, param, badge, canManage,
     fmtDate, fmtTime, fmtDateTime, fmtMonth, fmtNum, money, moneyShort, unitLabel, initials, daysSince, todayLocal, addDays,
-    currentProperty, setProperty, onProperty, propertyOptions, propertyName,
+    currentProperty, setProperty, onProperty, propertyOptions, propertyName, refreshPropertySelects,
     ROLE, KIND, OCCUPANCY, CONCEPTS, MESES_LARGOS,
     get me() { return me; },
     get properties() { return properties; },

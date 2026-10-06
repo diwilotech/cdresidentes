@@ -50,7 +50,7 @@
 
       async function reloadProps() {
         App.properties = (await App.api('/properties')).items;
-        document.querySelectorAll('[data-property-select]').forEach((s) => (s.innerHTML = App.propertyOptions(App.currentProperty(), { blank: true })));
+        App.refreshPropertySelects();
       }
 
       async function load() {
