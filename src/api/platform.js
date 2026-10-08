@@ -1,5 +1,5 @@
 // Plataforma: Diwilo Web crea negocios (administraciones), invita propietarios y fija hasta cuándo
-// está paga la suscripción. Nivel 'platform' = Authorization: Bearer PLATFORM_KEY.
+// está paga la suscripción. Nivel 'platform' = llamada RPC de Diwilo (ver lib/platform-rpc.js).
 // Contrato común a las apps de Diwilo (pedidos, nutrición, citas, residentes):
 //   GET    /api/platform/businesses
 //   POST   /api/platform/businesses                 { name, slug?, owner_email, owner_name?, paid_until }

@@ -91,7 +91,7 @@ Formatos: **media carta** (una por hoja), **carta original y copia** (propietari
 ## Plataforma Diwilo
 
 Los negocios (administraciones), sus propietarios y la suscripción se manejan desde **Diwilo Web** (`diwilo.com/admin`),
-que llama a `/api/platform/*` con `Authorization: Bearer PLATFORM_KEY` ([src/api/platform.js](src/api/platform.js)),
+que llama a `/api/platform/*` por RPC, sin clave compartida ([src/api/platform.js](src/api/platform.js), [src/lib/platform-rpc.js](src/lib/platform-rpc.js)),
 con el mismo contrato que Pedidos, Nutrición y Citas.
 
 - **Crear negocio:** Diwilo hace `POST /api/platform/businesses` y recibe el link de invitación del propietario (`/#invite=…`).
@@ -105,18 +105,12 @@ con el mismo contrato que Pedidos, Nutrición y Citas.
 
 ```sh
 npm install
-cp .dev.vars.example .dev.vars          # PLATFORM_KEY local
+cp .dev.vars.example .dev.vars          # opcional: SMTP
 npm run db:migrate:local
 npm run dev                             # http://localhost:8787
 ```
 
-Crear un negocio de prueba:
-
-```sh
-curl -X POST localhost:8787/api/platform/businesses -H "authorization: Bearer <PLATFORM_KEY>" \
-  -H 'content-type: application/json' -d '{"name":"Altos de la Colina","owner_email":"tu@correo.co","paid_until":null}'
-# abre http://localhost:8787 + invite_path para crear la contraseña
-```
+Crear un negocio de prueba: Para crear negocios en local, levanta Diwilo Web junto con esta app (desde la carpeta de Diwilo: `npx wrangler dev -c wrangler.jsonc -c "../Control de Residentes/wrangler.jsonc" --var ACCESS_AUD: --var DEV_ADMIN_EMAIL:tu@correo.com`) y usa Negocios en http://localhost:8787/admin. `/api/platform/*` solo responde por RPC.
 
 El binding `AI` siempre usa Workers AI remoto (requiere `wrangler login`), también en local.
 
@@ -131,7 +125,6 @@ Secretos (`npx wrangler secret put <NOMBRE>`):
 
 | Secreto | Para |
 |---|---|
-| `PLATFORM_KEY` | la misma clave que usa Diwilo Web con las demás apps |
 | `SMTP_USER` / `SMTP_PASS` | cuenta Gmail + contraseña de aplicación |
 | `EVOLUTION_URL` / `EVOLUTION_KEY` | servidor Evolution API (cada administración pone su instancia en Ajustes) |
 

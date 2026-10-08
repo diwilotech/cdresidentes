@@ -54,7 +54,6 @@
   }
 
   // Secretos (wrangler secret put <NOMBRE>), no van en el repo:
-  //   PLATFORM_KEY         clave compartida con Diwilo Web (crea negocios y maneja suscripciones)
   //   SMTP_USER / SMTP_PASS  cuenta Gmail + contraseña de aplicación
   //   EVOLUTION_URL / EVOLUTION_KEY  servidor Evolution API
 }

@@ -1,4 +1,6 @@
 // CD Residentes — Worker monolítico: API + panel admin (HTML estáticos).
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { platformCall } from './lib/platform-rpc.js';
 import { Router } from './router.js';
 import { HttpError, errorResponse } from './lib/http.js';
 import { authenticate, loadSession, loadPortalSession } from './lib/auth.js';
@@ -35,7 +37,7 @@ const SECURITY_HEADERS = {
 async function handleApi(req, env, ctx, url) {
   const { route, params } = router.match(req.method, url.pathname);
   // Protección CSRF: toda mutación debe traer este encabezado (fuerza preflight entre orígenes).
-  // Diwilo Web (nivel 'platform') no usa cookies: se autentica con PLATFORM_KEY.
+  // Diwilo Web (nivel 'platform') no usa cookies: entra por RPC (Platform.call).
   if (req.method !== 'GET' && route.auth !== 'platform' && req.headers.get('x-cdr') !== '1') {
     throw new HttpError(403, 'Solicitud no permitida');
   }
@@ -138,7 +140,7 @@ function withHeaders(res, headers) {
   return out;
 }
 
-export default {
+const worker = {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const isApi = url.pathname.startsWith('/api/');
@@ -176,3 +178,11 @@ export default {
     }
   },
 };
+export default worker;
+
+// Diwilo Web administra esta app por RPC (service binding con entrypoint "Platform"), sin clave compartida.
+export class Platform extends WorkerEntrypoint {
+  call(method, path, body, origin) {
+    return platformCall(worker, this.env, this.ctx, method, path, body, origin);
+  }
+}
