@@ -8,11 +8,18 @@
 //          slug = dirección /<slug>; la anterior queda como alias y redirige a la nueva.
 //   POST   /api/platform/businesses/:id/users       { email, name?, role: owner|admin|staff } -> invite_path
 //          Un solo propietario por negocio: role 'owner' le pasa la propiedad (el anterior queda como administrador).
-//   PATCH  /api/platform/businesses/:id/users/:userId { role }  solo cambia permisos (no genera link ni toca la contraseña)
+//   PATCH  /api/platform/businesses/:id/users/:userId { role?, email? }  permisos y/o correo (sin link ni contraseña)
 //   DELETE /api/platform/businesses/:id/users/:userId   (el propietario no se quita: primero se pasa la propiedad)
+//   DELETE /api/platform/businesses/:id               archiva: nadie entra; se borra por lotes a los 20 días
+//   POST   /api/platform/businesses/:id/restore       lo saca del archivo
+//   GET    /api/platform/businesses?archived=1        solo los archivados (con purge_on)
+//   POST   /api/platform/purge                        { days? } borra por lotes los archivados vencidos (cron de Diwilo)
+//   POST   /api/platform/businesses/:id/sso           pase de un solo uso para entrar como el propietario -> { path }
+//   GET    /api/sso?t=<pase>                          (público) cambia el pase por la sesión del propietario
 import { json, readJson, HttpError, str, oneOf, email } from '../lib/http.js';
 import { globalDb, uuid } from '../lib/db.js';
-import { createInvite, invitePath, isExpired } from '../lib/auth.js';
+import { createInvite, invitePath, isExpired, createSession, sessionCookie } from '../lib/auth.js';
+import { purgeArchived, purgeDate, issueSsoTicket, takeSsoTicket } from '../lib/platform-tools.js';
 import { RESERVED, validateSlug } from '../lib/tenant.js';
 import { brandUrl } from './files.js';
 
@@ -25,12 +32,12 @@ function paidUntil(v) {
   return v;
 }
 
-async function listBusinesses(env, id, origin = '') {
+async function listBusinesses(env, id, origin = '', archived = false) {
   const db = globalDb(env);
-  const where = id ? 'WHERE b.id = ?' : '';
+  const where = id ? 'WHERE b.id = ?' : archived ? 'WHERE b.archived_at IS NOT NULL' : 'WHERE b.archived_at IS NULL';
   const args = id ? [id] : [];
   const [businesses, users] = await Promise.all([
-    db.all(`SELECT b.id, b.name, b.slug, b.status, b.created_at, b.paid_until, b.logo_key FROM businesses b ${where} ORDER BY b.created_at`, ...args),
+    db.all(`SELECT b.id, b.name, b.slug, b.status, b.created_at, b.paid_until, b.archived_at, b.logo_key FROM businesses b ${where} ORDER BY b.created_at`, ...args),
     db.all(
       `SELECT m.business_id, u.id, u.email, u.name, m.role, (u.pin_hash IS NOT NULL) AS has_password
          FROM memberships m JOIN users u ON u.id = m.user_id ${id ? 'WHERE m.business_id = ?' : ''}
@@ -46,6 +53,8 @@ async function listBusinesses(env, id, origin = '') {
     created_at: b.created_at.replace(' ', 'T') + 'Z',
     paid_until: b.paid_until || null,
     read_only: isExpired(b.paid_until),
+    archived_at: b.archived_at || null,
+    purge_on: purgeDate(b.archived_at),
     admin_url: `${origin}/${b.slug}/admin`,
     logo_url: b.logo_key ? origin + brandUrl(b.logo_key) : null,
     users: users.filter((u) => u.business_id === b.id).map((u) => ({
@@ -81,7 +90,8 @@ async function addMember(env, businessId, mail, name, role) {
 }
 
 export function routes(r) {
-  r.get('/api/platform/businesses', 'platform', async (c) => json({ businesses: await listBusinesses(c.env, null, c.url.origin) }));
+  r.get('/api/platform/businesses', 'platform', async (c) =>
+    json({ businesses: await listBusinesses(c.env, null, c.url.origin, c.url.searchParams.get('archived') === '1') }));
 
   r.post('/api/platform/businesses', 'platform', async (c) => {
     const body = await readJson(c.req);
@@ -157,19 +167,28 @@ export function routes(r) {
   r.patch('/api/platform/businesses/:id/users/:userId', 'platform', async (c) => {
     const body = await readJson(c.req);
     const role = oneOf(body.role, ['owner', 'admin', 'staff'], { label: 'Rol' });
-    if (!role) throw new HttpError(400, 'Rol es obligatorio');
+    const newEmail = email(body.email, { label: 'Correo' });
+    if (!role && !newEmail) throw new HttpError(400, 'Indica el rol o el correo');
     const db = globalDb(c.env);
-    const m = await db.first('SELECT role FROM memberships WHERE business_id = ? AND user_id = ?', c.params.id, c.params.userId);
+    const m = await db.first(
+      'SELECT m.role, u.email FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.business_id = ? AND m.user_id = ?',
+      c.params.id, c.params.userId);
     if (!m) throw new HttpError(404, 'El usuario no pertenece a este negocio');
-    if (m.role === role) return json({ ok: true, role });
-    if (m.role === 'owner') throw new HttpError(409, 'Es el propietario: para cambiarlo, asigna otro propietario');
-    await db.batch([
-      ...(role === 'owner'
-        ? [db.prepare(`UPDATE memberships SET role = 'admin' WHERE business_id = ? AND role = 'owner'`, c.params.id)]
-        : []),
-      db.prepare('UPDATE memberships SET role = ? WHERE business_id = ? AND user_id = ?', role, c.params.id, c.params.userId),
-    ]);
-    return json({ ok: true, role });
+    const stmts = [];
+    // Correo: es la cuenta de la persona (la misma en todos sus negocios).
+    if (newEmail && newEmail !== m.email) {
+      if (await db.first('SELECT 1 FROM users WHERE email = ? AND id <> ?', newEmail, c.params.userId)) throw new HttpError(409, 'Ese correo ya tiene otra cuenta en la app');
+      stmts.push(db.prepare('UPDATE users SET email = ? WHERE id = ?', newEmail, c.params.userId),
+        db.prepare('UPDATE sessions SET email = ? WHERE user_id = ?', newEmail, c.params.userId));
+    }
+    // Rol. role 'owner' le pasa la propiedad: el propietario anterior queda como administrador.
+    if (role && role !== m.role) {
+      if (m.role === 'owner') throw new HttpError(409, 'Es el propietario: para cambiarlo, asigna otro propietario');
+      if (role === 'owner') stmts.push(db.prepare(`UPDATE memberships SET role = 'admin' WHERE business_id = ? AND role = 'owner'`, c.params.id));
+      stmts.push(db.prepare('UPDATE memberships SET role = ? WHERE business_id = ? AND user_id = ?', role, c.params.id, c.params.userId));
+    }
+    if (stmts.length) await db.batch(stmts);
+    return json({ ok: true, role: role || m.role, email: newEmail || m.email });
   });
 
   r.delete('/api/platform/businesses/:id/users/:userId', 'platform', async (c) => {
@@ -181,5 +200,57 @@ export function routes(r) {
       db.prepare('DELETE FROM sessions WHERE business_id = ? AND user_id = ?', c.params.id, c.params.userId),
     ]);
     return json({ ok: true });
+  });
+
+  // Archivar: nadie entra y sale de la lista. Se borra por lotes a los 20 días (POST /api/platform/purge).
+  r.delete('/api/platform/businesses/:id', 'platform', async (c) => {
+    const db = globalDb(c.env);
+    const b = await db.first('SELECT archived_at FROM businesses WHERE id = ?', c.params.id);
+    if (!b) throw new HttpError(404, 'Negocio no encontrado');
+    const at = b.archived_at || new Date().toISOString();
+    await db.batch([
+      db.prepare(`UPDATE businesses SET status = 'suspended', archived_at = ?, updated_at = datetime('now') WHERE id = ?`, at, c.params.id),
+      db.prepare('DELETE FROM sessions WHERE business_id = ?', c.params.id),
+      db.prepare('DELETE FROM portal_sessions WHERE business_id = ?', c.params.id),
+    ]);
+    return json({ ok: true, archived_at: at, purge_on: purgeDate(at) });
+  });
+
+  r.post('/api/platform/businesses/:id/restore', 'platform', async (c) => {
+    const db = globalDb(c.env);
+    const res = await db.run(`UPDATE businesses SET status = 'active', archived_at = NULL, updated_at = datetime('now') WHERE id = ? AND archived_at IS NOT NULL`, c.params.id);
+    if (!res.meta.changes) throw new HttpError(404, 'No está archivado');
+    return json({ ok: true });
+  });
+
+  r.post('/api/platform/purge', 'platform', async (c) => {
+    const body = await readJson(c.req).catch(() => ({}));
+    const days = Math.max(1, Math.min(365, Number(body.days) || 20));
+    return json(await purgeArchived(c.env, {
+      table: 'businesses', tenantCol: 'business_id', bucket: c.env.FILES,
+      // Cuentas que quedaron sin ningún negocio.
+      after: (env) => env.DB.prepare('DELETE FROM users WHERE id NOT IN (SELECT user_id FROM memberships) AND id NOT IN (SELECT user_id FROM residents)').run().catch(() => {}),
+    }, { days }));
+  });
+
+  // Entrar como el propietario sin contraseña: pase de un solo uso que Diwilo abre en el navegador.
+  r.post('/api/platform/businesses/:id/sso', 'platform', async (c) => {
+    const owner = await globalDb(c.env).first(
+      `SELECT m.user_id FROM memberships m JOIN businesses b ON b.id = m.business_id
+        WHERE m.business_id = ? AND m.role = 'owner' AND b.archived_at IS NULL`, c.params.id);
+    if (!owner) throw new HttpError(404, 'El negocio no tiene propietario o está archivado');
+    return json({ path: `/api/sso?t=${await issueSsoTicket(c.env, c.params.id, owner.user_id)}` });
+  });
+
+  r.get('/api/sso', 'public', async (c) => {
+    const t = await takeSsoTicket(c.env, c.url.searchParams.get('t'));
+    const row = t && await globalDb(c.env).first(
+      `SELECT u.id, u.email, b.slug FROM users u
+         JOIN memberships m ON m.user_id = u.id AND m.business_id = ? AND m.role = 'owner'
+         JOIN businesses b ON b.id = m.business_id AND b.status = 'active' AND b.archived_at IS NULL
+        WHERE u.id = ?`, t.business_id, t.user_id);
+    if (!row) return new Response('Este acceso ya se usó o venció. Vuelve a abrirlo desde Diwilo.', { status: 410, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    const token = await createSession(c.env, row, t.business_id);
+    return new Response(null, { status: 302, headers: { location: `/${row.slug}/admin/`, 'set-cookie': sessionCookie(token, c.req), 'cache-control': 'no-store' } });
   });
 }
