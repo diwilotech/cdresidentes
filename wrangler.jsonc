@@ -26,7 +26,10 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/admin", "/admin/*", "/portal", "/portal/*"]
+    "not_found_handling": "404-page",
+    // Pasan por el Worker: login y panel de cada administración (/<dirección>), páginas (exigen sesión), API, portal y MCP.
+    // Los archivos estáticos (css, js, íconos…) se sirven directo.
+    "run_worker_first": ["/*", "!/css/*", "!/js/*", "!/icons/*", "!/assets/*", "!/admin/assets/*", "!/favicon.svg", "!/manifest.json", "!/sw.js", "!/404.html"]
   },
 
   "d1_databases": [
@@ -45,6 +48,12 @@
 
   // Diwilo Residential AI (chat del asistente) con Workers AI.
   "ai": { "binding": "AI" },
+
+  // Tareas diarias de los módulos (3:00 a. m. Colombia).
+  "triggers": { "crons": ["0 8 * * *"] },
+
+  // Módulos horizontales (Inicio, Marca, IA, Finanzas, Marketing, Nómina): Worker central «Diwilo Modulos» por RPC (modulos.app.json → "centrales").
+  "services": [{ "binding": "MODULOS", "service": "diwilo-modulos", "entrypoint": "Modulos" }],
 
   "vars": {
     "APP_NAME": "CD Residentes",

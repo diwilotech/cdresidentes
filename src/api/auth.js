@@ -90,4 +90,24 @@ export function routes(r) {
     await destroySession(c.env, c.session.session_id);
     return json({ ok: true }, 200, { 'set-cookie': sessionCookie(null, c.req) });
   });
+
+  // Rutas comunes del shell de las apps de Diwilo (mismo contrato que las demás apps): salir, cambiar de administración y de contraseña.
+  r.post('/api/auth/logout', 'session', async (c) => {
+    await destroySession(c.env, c.session.session_id);
+    return json({ ok: true }, 200, { 'set-cookie': sessionCookie(null, c.req) });
+  });
+  r.post('/api/auth/business', 'session', async (c) => {
+    const { businessId } = await readJson(c.req);
+    const b = (await userBusinesses(c.env, c.user)).find((x) => x.id === businessId);
+    if (!b) throw new HttpError(403, 'No perteneces a ese negocio');
+    await globalDb(c.env).run('UPDATE sessions SET business_id = ? WHERE id = ?', b.id, c.session.session_id);
+    return json({ ok: true, businessId: b.id, slug: b.slug });
+  });
+  r.post('/api/auth/password', 'session', async (c) => {
+    const { current, password } = await readJson(c.req);
+    const user = await userByEmail(c.env, c.user.email);
+    await checkPassword(c.env, user, current);
+    await setPassword(c.env, user.id, password);
+    return json({ ok: true });
+  });
 }

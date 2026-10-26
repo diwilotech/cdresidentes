@@ -14,7 +14,7 @@ const FIELDS = {
 };
 
 export function routes(r) {
-  r.get('/api/admin/pets', 'tenant', async (c) => {
+  r.get('/api/admin/pets', 'tenant:mascotas', async (c) => {
     const [pf, pa] = propertyFilter(c, 'u.property_id');
     const [qf, qa] = searchFilter(c, ['pt.name', 'pt.breed', 'u.number', 'u.owner_name']);
     const items = await tenantDb(c).all(
@@ -29,17 +29,17 @@ export function routes(r) {
     return json({ items });
   });
 
-  r.post('/api/admin/pets', 'tenant', async (c) => {
+  r.post('/api/admin/pets', 'tenant:mascotas', async (c) => {
     const id = await insertRow(c, 'pets', pick(await readJson(c.req), FIELDS));
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/pets/:id', 'tenant', async (c) => {
+  r.put('/api/admin/pets/:id', 'tenant:mascotas', async (c) => {
     await updateRow(c, 'pets', c.params.id, pick(await readJson(c.req), FIELDS, { partial: true }), { touch: false });
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/pets/:id', 'tenant', async (c) => {
+  r.delete('/api/admin/pets/:id', 'tenant:mascotas', async (c) => {
     await deleteRow(c, 'pets', c.params.id);
     return json({ ok: true });
   });

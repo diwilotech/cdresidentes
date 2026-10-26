@@ -1,0 +1,12 @@
+// SOLO PARA PROBAR EN LOCAL: hace de Diwilo Web y llama a la app por RPC, como en producción.
+// No se despliega nunca. Uso: npm run test
+{
+  "name": "diwilo-local-tester",
+  "main": "index.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "services": [
+    { "binding": "APP", "service": "cdresidentes", "entrypoint": "Platform" },
+    { "binding": "WEB", "service": "cdresidentes" }
+  ]
+}

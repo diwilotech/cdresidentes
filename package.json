@@ -4,12 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "db:migrate:local": "wrangler d1 migrations apply cdresidentes --local",
+    "db:migrate:local": "wrangler d1 migrations apply cdresidentes --local --persist-to .wrangler/state",
     "db:seed:local": "wrangler d1 execute cdresidentes --local --file=scripts/seed.sql",
     "db:migrate:remote": "wrangler d1 migrations apply cdresidentes --remote",
-    "deploy": "wrangler d1 migrations apply cdresidentes --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply cdresidentes --remote && wrangler deploy",
+    "test": "node scripts/test-local.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4"
+    "wrangler": "^4.153.0"
   }
 }

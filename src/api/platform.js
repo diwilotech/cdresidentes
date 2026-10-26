@@ -55,7 +55,7 @@ async function listBusinesses(env, id, origin = '', archived = false) {
     read_only: isExpired(b.paid_until),
     archived_at: b.archived_at || null,
     purge_on: purgeDate(b.archived_at),
-    admin_url: `${origin}/${b.slug}/admin`,
+    admin_url: `${origin}/${b.slug}`,
     logo_url: b.logo_key ? origin + brandUrl(b.logo_key) : null,
     users: users.filter((u) => u.business_id === b.id).map((u) => ({
       id: u.id, email: u.email, name: u.name, role: u.role,
@@ -251,6 +251,6 @@ export function routes(r) {
         WHERE u.id = ?`, t.business_id, t.user_id);
     if (!row) return new Response('Este acceso ya se usó o venció. Vuelve a abrirlo desde Diwilo.', { status: 410, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     const token = await createSession(c.env, row, t.business_id);
-    return new Response(null, { status: 302, headers: { location: `/${row.slug}/admin/`, 'set-cookie': sessionCookie(token, c.req), 'cache-control': 'no-store' } });
+    return new Response(null, { status: 302, headers: { location: `/${row.slug}`, 'set-cookie': sessionCookie(token, c.req), 'cache-control': 'no-store' } });
   });
 }

@@ -1,20 +1,19 @@
-// Diwilo Residential AI: chat de la administración con Workers AI (binding AI).
-// Cada respuesta se arma con un resumen en vivo de los datos del negocio (siempre filtrados por business_id):
-// cartera y deudores, PQRS abiertas, solicitudes de portería, reservas y comunicados recientes.
+// Borradores con IA de la administración (Workers AI, binding AI): recordatorio de cobro de una unidad y circular sobre un tema.
+// El chat «Diwilo AI» se reemplazó por el módulo IA (agentes, chats, asistente): sus consultas en vivo están en src/ia/residentes.js,
+// que usa contextFor() de aquí: un resumen en vivo del negocio o de un conjunto (siempre filtrado por business_id).
 import { json, readJson, str, oneOf, HttpError } from '../lib/http.js';
-import { tenantDb, uuid } from '../lib/db.js';
+import { tenantDb } from '../lib/db.js';
 import { getRow } from '../lib/crud.js';
 import { today } from '../lib/time.js';
 import { UNIT_DEBT_SQL, unitLabel } from './units.js';
 import { CONCEPTS } from './charges.js';
 
 const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const HISTORY = 12; // mensajes previos que se envían al modelo
 
 const money = (n) => '$' + Math.round(n || 0).toLocaleString('es-CO');
 
 // Resumen compacto (texto) del negocio o de un conjunto para el prompt.
-async function contextFor(c, propertyId) {
+export async function contextFor(c, propertyId) {
   const db = tenantDb(c);
   const t = today();
   const pf = propertyId ? ' AND property_id = ?' : '';
@@ -83,16 +82,6 @@ async function contextFor(c, propertyId) {
   return lines.join('\n');
 }
 
-const SYSTEM = `Eres Diwilo Residential AI, asistente de la administración de propiedad horizontal (conjuntos residenciales en Colombia, Ley 675 de 2001).
-Ayudas al administrador a: analizar la cartera y los deudores, redactar circulares y recordatorios de cobro cordiales pero firmes,
-auditar PQRS y solicitudes de portería, y proponer acciones de convivencia.
-Reglas:
-- Responde siempre en español, claro y breve. Usa listas cuando ayuden y **negritas** para cifras clave.
-- Usa SOLO los datos del bloque DATOS; si algo no está, dilo y sugiere dónde registrarlo en la app. No inventes cifras ni nombres.
-- Valores en pesos colombianos con formato $1.234.567.
-- Cuando redactes un comunicado o mensaje listo para enviar, ponlo entre las líneas ---INICIO--- y ---FIN--- para que la app ofrezca publicarlo o enviarlo por WhatsApp.
-- Nunca compartas datos de una unidad con otra; los mensajes de cobro van dirigidos solo a su propietario.`;
-
 async function runModel(env, messages) {
   if (!env.AI) throw new HttpError(503, 'El asistente de IA no está configurado en el servidor');
   try {
@@ -107,67 +96,6 @@ async function runModel(env, messages) {
 }
 
 export function routes(r) {
-  r.get('/api/admin/ai/chats', 'tenant', async (c) => {
-    const items = await tenantDb(c).all(
-      'SELECT id, title, property_id, updated_at FROM chats WHERE business_id = ? AND user_id = ? ORDER BY updated_at DESC LIMIT 50',
-      c.businessId, c.user.id,
-    );
-    return json({ items });
-  });
-
-  r.get('/api/admin/ai/chats/:id', 'tenant', async (c) => {
-    const chat = await getRow(c, 'chats', c.params.id, 'Conversación');
-    if (chat.user_id !== c.user.id) throw new HttpError(404, 'Conversación no encontrada');
-    const messages = await tenantDb(c).all(
-      'SELECT id, role, content, created_at FROM chat_messages WHERE business_id = ? AND chat_id = ? ORDER BY created_at, rowid',
-      c.businessId, chat.id,
-    );
-    return json({ chat, messages });
-  });
-
-  r.delete('/api/admin/ai/chats/:id', 'tenant', async (c) => {
-    const chat = await getRow(c, 'chats', c.params.id, 'Conversación');
-    if (chat.user_id !== c.user.id) throw new HttpError(404, 'Conversación no encontrada');
-    await tenantDb(c).run('DELETE FROM chats WHERE business_id = ? AND id = ?', c.businessId, chat.id);
-    return json({ ok: true });
-  });
-
-  // body: { chat_id?, message, property_id? } -> { chat_id, answer }
-  r.post('/api/admin/ai/chat', 'tenant', async (c) => {
-    const body = await readJson(c.req);
-    const message = str(body.message, { required: true, max: 4000, label: 'Mensaje' });
-    const db = tenantDb(c);
-    let chat;
-    if (body.chat_id) {
-      chat = await getRow(c, 'chats', String(body.chat_id), 'Conversación');
-      if (chat.user_id !== c.user.id) throw new HttpError(404, 'Conversación no encontrada');
-    } else {
-      const propertyId = str(body.property_id, { max: 40 });
-      if (propertyId) await getRow(c, 'properties', propertyId, 'Conjunto');
-      chat = { id: uuid(), property_id: propertyId };
-      await db.run(
-        'INSERT INTO chats (id, business_id, user_id, property_id, title) VALUES (?, ?, ?, ?, ?)',
-        chat.id, c.businessId, c.user.id, chat.property_id, message.slice(0, 60),
-      );
-    }
-    const history = (await db.all(
-      'SELECT role, content FROM chat_messages WHERE business_id = ? AND chat_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
-      c.businessId, chat.id, HISTORY,
-    )).reverse();
-    const context = await contextFor(c, chat.property_id);
-    const answer = await runModel(c.env, [
-      { role: 'system', content: `${SYSTEM}\n\nDATOS (en vivo, de la base de la administración):\n${context}` },
-      ...history,
-      { role: 'user', content: message },
-    ]);
-    await db.batch([
-      db.prepare('INSERT INTO chat_messages (id, business_id, chat_id, role, content) VALUES (?, ?, ?, ?, ?)', uuid(), c.businessId, chat.id, 'user', message),
-      db.prepare(`INSERT INTO chat_messages (id, business_id, chat_id, role, content, created_at) VALUES (?, ?, ?, ?, ?, datetime('now', '+1 second'))`, uuid(), c.businessId, chat.id, 'assistant', answer),
-      db.prepare(`UPDATE chats SET updated_at = datetime('now') WHERE business_id = ? AND id = ?`, c.businessId, chat.id),
-    ]);
-    return json({ chat_id: chat.id, answer });
-  });
-
   // Borradores rápidos: recordatorio de cobro para una unidad o circular sobre un tema.
   // body: { kind: 'cobro', unit_id } | { kind: 'circular', topic, property_id? }
   r.post('/api/admin/ai/draft', 'tenant', async (c) => {

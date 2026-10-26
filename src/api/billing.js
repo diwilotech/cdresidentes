@@ -143,14 +143,14 @@ export function routes(r) {
   // ---------- configuración (Ajustes) ----------
 
   // pending: saldo sin pagar por concepto (un concepto desactivado con saldo se sigue mostrando para que los totales cuadren).
-  r.get('/api/admin/billing', 'tenant', async (c) => {
+  r.get('/api/admin/billing', 'tenant:cartera', async (c) => {
     const rows = await tenantDb(c).all(
       'SELECT concept, SUM(amount) AS amount FROM charges WHERE business_id = ? AND paid_at IS NULL GROUP BY concept', c.businessId,
     );
     return json({ billing: await getBilling(c), defaults: BILLING_DEFAULTS, concepts: CONCEPTS, pending: Object.fromEntries(rows.map((r) => [r.concept, r.amount])) });
   });
 
-  r.put('/api/admin/billing', 'manager', async (c) => {
+  r.put('/api/admin/billing', 'manager:cartera', async (c) => {
     // Lo que no venga en el cuerpo conserva lo guardado (la tasa de interés que escogió la persona, etc.).
     const billing = validBilling({ ...(await getBilling(c)), ...(await readJson(c.req)) });
     await tenantDb(c).run(`UPDATE businesses SET billing = ?, updated_at = datetime('now') WHERE id = ? /* business_id */`, JSON.stringify(billing), c.businessId);
@@ -159,7 +159,7 @@ export function routes(r) {
 
   // ---------- estado de cuenta por unidad (tabla de cartera) ----------
 
-  r.get('/api/admin/charges/by-unit', 'tenant', async (c) => {
+  r.get('/api/admin/charges/by-unit', 'tenant:cartera', async (c) => {
     const sp = c.url.searchParams;
     const rows = await pendingByUnit(c, { propertyId: sp.get('property'), onlyDebt: sp.get('all') !== '1' });
     return json({
@@ -177,7 +177,7 @@ export function routes(r) {
   // Un cargo cuenta en el mes de su vencimiento; un pago, en el mes en que se pagó (o en el del vencimiento si se pagó por adelantado),
   // así la cuenta siempre cuadra. `pending` = lo que aún se debe de los cargos de ese mes.
   // ?unit=<id> una unidad · ?property=<id> un conjunto · sin filtro: toda la administración
-  r.get('/api/admin/charges/cuts', 'tenant', async (c) => {
+  r.get('/api/admin/charges/cuts', 'tenant:cartera', async (c) => {
     const sp = c.url.searchParams;
     const args = [c.businessId];
     let where = '';
@@ -219,7 +219,7 @@ export function routes(r) {
 
   // Corte de un mes por unidad (?period=YYYY-MM, ?property=, ?unit=): mismas reglas que /cuts, una fila por unidad;
   // la suma de las filas da los totales del edificio.
-  r.get('/api/admin/charges/cut', 'tenant', async (c) => {
+  r.get('/api/admin/charges/cut', 'tenant:cartera', async (c) => {
     const sp = c.url.searchParams;
     const per = period(sp.get('period'), 'Mes de corte') || today().slice(0, 7);
     const args = [c.businessId];
@@ -265,7 +265,7 @@ export function routes(r) {
   // ---------- cuentas de cobro (datos para el PDF; el PDF se arma en el navegador) ----------
   // ?unit=<id> una unidad · ?property=<id> todo el conjunto · ?all=1 incluye unidades sin saldo
 
-  r.get('/api/admin/statements', 'tenant', async (c) => {
+  r.get('/api/admin/statements', 'tenant:cartera', async (c) => {
     const sp = c.url.searchParams;
     const unitId = sp.get('unit');
     const propertyId = sp.get('property');
@@ -276,7 +276,7 @@ export function routes(r) {
   // ---------- liquidaciones ----------
 
   // Intereses de mora del periodo (no duplica si la unidad ya tiene intereses de ese periodo).
-  r.post('/api/admin/charges/interest', 'manager', async (c) => {
+  r.post('/api/admin/charges/interest', 'manager:cartera', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
     assertConcept(billing, 'int');
@@ -304,7 +304,7 @@ export function routes(r) {
   });
 
   // Cobro jurídico: honorarios (% de lo vencido) a las unidades con más de N días de mora.
-  r.post('/api/admin/charges/legal', 'manager', async (c) => {
+  r.post('/api/admin/charges/legal', 'manager:cartera', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
     assertConcept(billing, 'jur');
@@ -332,7 +332,7 @@ export function routes(r) {
   });
 
   // Retroactivo: % de incremento sobre las cuotas de administración de un rango de periodos.
-  r.post('/api/admin/charges/retro', 'manager', async (c) => {
+  r.post('/api/admin/charges/retro', 'manager:cartera', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
     assertConcept(billing, 'rtc');
@@ -359,7 +359,7 @@ export function routes(r) {
   });
 
   // Cuota extraordinaria: total aprobado por asamblea repartido por coeficiente o en partes iguales, en N cuotas mensuales.
-  r.post('/api/admin/charges/extra', 'manager', async (c) => {
+  r.post('/api/admin/charges/extra', 'manager:cartera', async (c) => {
     const body = await readJson(c.req);
     const billing = await getBilling(c);
     assertConcept(billing, 'ext');

@@ -1,0 +1,261 @@
+{
+  "app": "cdresidentes",
+  "nombre": "CD Residentes",
+  "tema": "turquesa",
+  "centrales": [
+    "finanzas",
+    "marketing",
+    "nomina",
+    "marca",
+    "ai",
+    "dashboard"
+  ],
+  "modulos": [
+    {
+      "id": "conjuntos",
+      "nombre": "Conjuntos",
+      "icono": "bi-buildings",
+      "menu": {
+        "ruta": "/staff/conjuntos.html",
+        "orden": 10
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "properties",
+        "files"
+      ],
+      "mcp": {
+        "guia": "Conjuntos: las sedes de la administración (conjunto, edificio o torre) con NIT, dirección, torres, logo y documentos (actas, reglamento). Casi todo lo demás (propietarios, cartera, portería, PQRS, reservas, mascotas, comunicados) se trabaja dentro de un conjunto. La IA consulta y edita conjuntos; crear o borrar uno pide confirmación.",
+        "ejemplos": [
+          "Pídele: «¿Cuántos conjuntos administro y cuántas unidades tiene cada uno?»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "unidades",
+      "nombre": "Propietarios",
+      "icono": "bi-people",
+      "menu": {
+        "ruta": "/staff/unidades.html",
+        "orden": 20
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "units",
+        "residents"
+      ],
+      "mcp": {
+        "guia": "Propietarios: directorio de unidades (apartamentos, casas, locales) con propietario, arrendatario, área, coeficiente, torre, contacto y acceso al portal. Filtra por conjunto, torre, tipo y mora. La IA busca unidades y personas, consulta su estado de cuenta y redacta el cobro con el tono de la marca.",
+        "ejemplos": [
+          "Pídele: «¿Quién vive en el apartamento 502 de la torre 2 y cuánto debe?»",
+          "Pídele: «Redacta el cobro para los 5 mayores deudores del conjunto»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "cartera",
+      "nombre": "Cartera",
+      "icono": "bi-cash-stack",
+      "menu": {
+        "ruta": "/staff/cartera.html",
+        "orden": 30
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "charges"
+      ],
+      "mcp": {
+        "guia": "Cartera por unidad: estado de cuenta de cada unidad (cuota de administración, extraordinarias, intereses, cobro jurídico, parqueadero y otros), movimientos, pagos por concepto, antigüedad de la mora y cuenta de cobro en PDF. NO es la contabilidad de la administradora (esa vive en el módulo Finanzas). La IA consulta y registra cobros y pagos; liquidar el mes o anular pide confirmación.",
+        "ejemplos": [
+          "Pídele: «¿Cuál es la cartera vencida del conjunto y quiénes más deben?»",
+          "Pídele: «Registra el pago de $350.000 de la unidad 301»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "porteria",
+      "nombre": "Portería",
+      "icono": "bi-door-open",
+      "menu": {
+        "ruta": "/staff/porteria.html",
+        "orden": 40
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "requests"
+      ],
+      "mcp": {
+        "guia": "Portería: mudanzas, visitas, mantenimiento, domicilios y alarmas con aprobación y evidencias. La IA lista y resume lo pendiente por conjunto; aprobar o rechazar una solicitud pide confirmación.",
+        "ejemplos": [
+          "Pídele: «¿Qué solicitudes de portería están pendientes hoy?»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "pqrs",
+      "nombre": "PQRS",
+      "icono": "bi-chat-square-text",
+      "menu": {
+        "ruta": "/staff/pqrs.html",
+        "orden": 50
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "pqrs"
+      ],
+      "mcp": {
+        "guia": "PQRS: peticiones, quejas, reclamos y sugerencias por categoría y prioridad, con tiempo de respuesta. La IA lista las abiertas y redacta una respuesta con el tono de la marca; responder o cerrar una PQRS pide confirmación.",
+        "ejemplos": [
+          "Pídele: «Resume las PQRS abiertas y propón respuestas»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "reservas",
+      "nombre": "Reservas",
+      "icono": "bi-calendar2-week",
+      "menu": {
+        "ruta": "/staff/reservas.html",
+        "orden": 60
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "amenities",
+        "bookings"
+      ],
+      "mcp": {
+        "guia": "Reservas de zonas comunes: tarifa por evento, hora o día, calendario, choque de horarios, aprobación y pago. La IA consulta la ocupación y las solicitudes; aprobar o rechazar una reserva pide confirmación.",
+        "ejemplos": [
+          "Pídele: «¿Está libre el salón social el sábado?»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "mascotas",
+      "nombre": "Mascotas",
+      "icono": "bi-heart",
+      "menu": {
+        "ruta": "/staff/mascotas.html",
+        "orden": 70
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "pets"
+      ],
+      "mcp": {
+        "guia": "Mascotas: censo con especie, raza (incluye las potencialmente peligrosas), vacunas, foto y carné. La IA consulta el censo y las vacunas vencidas.",
+        "ejemplos": [
+          "Pídele: «¿Qué mascotas tienen la vacuna vencida?»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "comunicados",
+      "nombre": "Comunicados",
+      "icono": "bi-megaphone",
+      "menu": {
+        "ruta": "/staff/comunicados.html",
+        "orden": 80
+      },
+      "permisos": {
+        "ver": "staff",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "notices"
+      ],
+      "mcp": {
+        "guia": "Comunicados: circulares con plantillas y redacción con IA; se envían a todos, solo propietarios o solo morosos por WhatsApp y correo. La IA redacta con el tono de la marca (lee antes la guía de marca); publicar o enviar pide confirmación.",
+        "ejemplos": [
+          "Pídele: «Redacta una circular sobre el corte de agua del jueves»"
+        ],
+        "flujos": []
+      }
+    },
+    {
+      "id": "ajustes",
+      "nombre": "Ajustes",
+      "icono": "bi-gear",
+      "menu": {
+        "ruta": "/staff/ajustes.html",
+        "orden": 90
+      },
+      "permisos": {
+        "ver": "admin",
+        "configurar": "admin"
+      },
+      "widgets": [],
+      "depende_de": [],
+      "tipo": "propio",
+      "tablas": [
+        "businesses"
+      ],
+      "mcp": {
+        "guia": "Ajustes de la administración: datos y logo, instancia de WhatsApp, formato de la cuenta de cobro (día de vencimiento, % de interés y su base, cobro jurídico, retroactivo, extraordinarias y nota al pie) y pruebas de envío. Solo propietario y administrador.",
+        "ejemplos": [
+          "Pídele: «¿Con qué interés y en qué día se vence la cuota de administración?»"
+        ],
+        "flujos": []
+      }
+    }
+  ],
+  "ambito": {
+    "etiqueta": "Conjunto",
+    "plural": "Conjuntos",
+    "articulo": "un",
+    "clave": "cdr_property",
+    "api": "/api/admin/properties"
+  }
+}

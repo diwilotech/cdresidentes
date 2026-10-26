@@ -7,6 +7,7 @@
 import { HttpError, getCookie } from './http.js';
 import { globalDb, nowIso } from './db.js';
 import { isPlatformCall } from './platform-rpc.js';
+import { parseModulos, requireModule } from './modules.js';
 
 export const SESSION_COOKIE = 'cdr_sid';
 const SESSION_HOURS = 12;
@@ -26,7 +27,7 @@ export async function sha256Hex(text) {
   return toHex(await crypto.subtle.digest('SHA-256', enc.encode(text)));
 }
 
-function randomHex(bytes) {
+export function randomHex(bytes) {
   return toHex(crypto.getRandomValues(new Uint8Array(bytes)));
 }
 
@@ -143,7 +144,7 @@ export async function loadSession(req, env) {
   const row = await globalDb(env).first(
     `SELECT s.id AS session_id, s.business_id,
             u.id AS user_id, u.email, u.name,
-            m.role, b.name AS business_name, b.slug AS business_slug, b.logo_key AS business_logo_key, b.status AS business_status, b.timezone, b.paid_until
+            m.role, m.modulos, b.name AS business_name, b.slug AS business_slug, b.logo_key AS business_logo_key, b.status AS business_status, b.timezone, b.paid_until
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        LEFT JOIN memberships m ON m.user_id = u.id AND m.business_id = s.business_id
@@ -164,7 +165,7 @@ export async function destroySession(env, sessionId) {
 // businesses.paid_until ('YYYY-MM-DD', inclusive) lo fija Diwilo Web. NULL = sin límite.
 // Vencida -> solo lectura: toda escritura del negocio responde 402.
 
-const todayBogota = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+export const todayBogota = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
 export const isExpired = (paidUntil) => !!paidUntil && paidUntil < todayBogota();
 
 function assertWritable(c, paidUntil) {
@@ -186,7 +187,10 @@ async function authenticatePlatform(c) {
   if (!isPlatformCall(c.req)) throw new HttpError(401, 'No autorizado');
 }
 
-export async function authenticate(c, level) {
+// Las rutas de un módulo lo declaran después de dos puntos: 'tenant:cartera', 'manager:cartera'. Así se comprueba en cada
+// petición que el módulo esté activo para el negocio y que la persona tenga acceso (si no, 403).
+export async function authenticate(c, spec) {
+  const [level, moduleId] = String(spec).split(':');
   if (level === 'public') return;
   if (level === 'platform') return authenticatePlatform(c);
   if (level === 'resident') return authenticateResident(c);
@@ -195,36 +199,39 @@ export async function authenticate(c, level) {
   c.session = s;
   c.user = { id: s.user_id, email: s.email, name: s.name };
 
-  // El panel vive en /<slug>/admin y envía el negocio en x-business: manda sobre el de la sesión.
+  // El panel vive en /<slug> y las páginas de /staff envían el negocio en x-business: manda sobre el de la sesión.
   // (en GET también por ?b=<slug>, para enlaces que se abren en otra pestaña, p. ej. archivos)
   const slug = c.req.headers.get('x-business') || (c.req.method === 'GET' && c.url?.searchParams.get('b')) || null;
   if (slug && slug !== s.business_slug) {
     const b = await globalDb(c.env).first(
-      `SELECT b.id, b.name, b.slug, b.status, b.timezone, b.paid_until, b.logo_key, m.role
+      `SELECT b.id, b.name, b.slug, b.status, b.timezone, b.paid_until, b.logo_key, m.role, m.modulos
          FROM businesses b LEFT JOIN memberships m ON m.business_id = b.id AND m.user_id = ?
-        WHERE b.slug = ?`,
+        WHERE b.slug = ? AND b.archived_at IS NULL`,
       s.user_id, slug,
     );
-    if (!b) throw new HttpError(404, 'Consultorio no encontrado', 'NO_BUSINESS');
+    if (!b) throw new HttpError(404, 'Administración no encontrada', 'NO_BUSINESS');
     // Las rutas de solo sesión (/auth/*) también se llaman desde el portal, donde la persona no es miembro.
     if (!b.role && level === 'session') return;
     if (!b.role) throw new HttpError(403, 'No tienes acceso a este negocio', 'NOT_MEMBER');
     Object.assign(s, {
       business_id: b.id, business_name: b.name, business_slug: b.slug, business_logo_key: b.logo_key, business_status: b.status,
-      timezone: b.timezone, paid_until: b.paid_until, role: b.role, read_only: isExpired(b.paid_until),
+      timezone: b.timezone, paid_until: b.paid_until, role: b.role, modulos: b.modulos, read_only: isExpired(b.paid_until),
     });
   }
 
   if (level === 'session') return;
-  if (!s.business_id || !s.role) throw new HttpError(409, 'Selecciona un negocio', 'NO_BUSINESS');
-  if (s.business_status !== 'active') throw new HttpError(403, 'Negocio suspendido');
-  assertWritable(c, s.paid_until);
+  if (!s.business_id || !s.role) throw new HttpError(409, 'Elige un negocio', 'NO_BUSINESS');
+  if (s.business_status && s.business_status !== 'active') throw new HttpError(403, 'Negocio suspendido');
   c.businessId = s.business_id;
   c.role = s.role;
+  c.modulos = parseModulos(s.modulos);
   c.timezone = s.timezone || 'America/Bogota';
+  c.readOnly = isExpired(s.paid_until);
+  assertWritable(c, s.paid_until);
   if (level === 'manager' && !['owner', 'admin'].includes(s.role)) {
-    throw new HttpError(403, 'Requiere rol de administrador del negocio');
+    throw new HttpError(403, 'Solo el propietario o un administrador');
   }
+  if (moduleId) await requireModule(c, moduleId);
 }
 
 // ---------- portal de propietarios ----------

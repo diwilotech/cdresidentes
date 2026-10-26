@@ -1,36 +1,44 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mascotas · CD Residentes</title>
-  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
-  <link rel="expect" href="#cdr-ready" blocking="render">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="/admin/assets/app.css" rel="stylesheet">
-  <style>.pet-photo { width: 3.2rem; height: 3.2rem; border-radius: .8rem; object-fit: cover; background: var(--cdr-accent-soft); display: grid; place-items: center; color: var(--cdr-accent); font-size: 1.4rem; flex: none; }</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mascotas · CD Residentes</title>
+<meta name="robots" content="noindex">
+<!-- Tema guardado: se aplica antes de pintar para que no parpadee (luego /api/me lo confirma) -->
+<script>try{var t=JSON.parse(localStorage.getItem('dw_tema')||'{}');document.documentElement.setAttribute('data-dw-tema',t.tema||'turquesa');document.documentElement.setAttribute('data-bs-theme',t.modo||'light')}catch(e){}</script>
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="/css/diwilo.css" rel="stylesheet">
+<link href="/css/residentes.css" rel="stylesheet">
+<style>.pet-photo { width: 3.2rem; height: 3.2rem; border-radius: .8rem; object-fit: cover; background: var(--cdr-accent-soft); display: grid; place-items: center; color: var(--cdr-accent); font-size: 1.4rem; flex: none; }</style>
 </head>
-<body>
-  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-      <div>
-        <div class="eyebrow">Censo consolidado</div>
-        <h1 class="page-title">Mascotas <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
-        <p class="page-sub">Registro de caninos, felinos y otras especies: razas, vacunación y sana convivencia.</p>
-      </div>
-      <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Registrar mascota</button>
+<body class="dw">
+<div id="dw-shell"></div>
+<main class="dw-main" data-titulo="Mascotas" data-modulo="mascotas">
+  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+      <div class="eyebrow">Censo consolidado</div>
+      <h1 class="page-title">Mascotas <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
+      <p class="page-sub">Registro de caninos, felinos y otras especies: razas, vacunación y sana convivencia.</p>
     </div>
-    <div class="row g-3 mb-3" id="kpis"></div>
-    <div class="card">
-      <table class="table table-hover align-middle w-100" id="list"></table>
-    </div>
-  </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="/admin/assets/app.js"></script>
-  <script>
+    <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Registrar mascota</button>
+  </div>
+  <div class="row g-3 mb-3" id="kpis"></div>
+  <div class="card">
+    <table class="table table-hover align-middle w-100" id="list"></table>
+  </div>
+  
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/crud.js"></script>
+<script src="/js/shell.js"></script>
+<script src="/js/residentes.js"></script>
+<script>
     (async () => {
       if (!(await App.init('mascotas'))) return;
       const { esc, unitLabel } = App;
@@ -104,7 +112,7 @@
       App.onProperty(load);
       load();
     })();
-  </script>
-  <span id="cdr-ready" hidden></span>
+  
+</script>
 </body>
 </html>

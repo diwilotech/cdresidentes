@@ -48,7 +48,7 @@ function filters(c) {
 }
 
 export function routes(r) {
-  r.get('/api/admin/charges', 'tenant', async (c) => {
+  r.get('/api/admin/charges', 'tenant:cartera', async (c) => {
     const [f, a] = filters(c);
     const items = await tenantDb(c).all(
       `SELECT ch.*, u.tower, u.number, u.owner_name, u.property_id, p.name AS property_name
@@ -61,7 +61,7 @@ export function routes(r) {
   });
 
   // Totales, antigüedad de la cartera y recaudo de los últimos 12 meses.
-  r.get('/api/admin/charges/summary', 'tenant', async (c) => {
+  r.get('/api/admin/charges/summary', 'tenant:cartera', async (c) => {
     const p = c.url.searchParams.get('property');
     const pf = p ? ' AND u.property_id = ?' : '';
     const pa = p ? [p] : [];
@@ -100,7 +100,7 @@ export function routes(r) {
     return json({ ...totals, ...debtors, aging, byConcept, monthly, concepts: CONCEPTS });
   });
 
-  r.post('/api/admin/charges', 'tenant', async (c) => {
+  r.post('/api/admin/charges', 'tenant:cartera', async (c) => {
     const data = pick(await readJson(c.req), FIELDS);
     assertConcept(await getBilling(c), data.concept);
     const id = await insertRow(c, 'charges', data);
@@ -111,7 +111,7 @@ export function routes(r) {
   //   mode 'coefficient': amount = presupuesto mensual total, se reparte por coeficiente
   //   mode 'area':        amount = valor por m²
   //   mode 'fixed':       amount = valor igual para cada unidad
-  r.post('/api/admin/charges/generate', 'manager', async (c) => {
+  r.post('/api/admin/charges/generate', 'manager:cartera', async (c) => {
     const body = await readJson(c.req);
     const property = await getRow(c, 'properties', str(body.property_id, { required: true, label: 'Conjunto' }), 'Conjunto');
     const period = FIELDS.period(body.period);
@@ -141,7 +141,7 @@ export function routes(r) {
 
   // Intereses, cobro jurídico, retroactivo y cuota extraordinaria: api/billing.js
 
-  r.post('/api/admin/charges/:id/pay', 'tenant', async (c) => {
+  r.post('/api/admin/charges/:id/pay', 'tenant:cartera', async (c) => {
     const body = await readJson(c.req);
     await updateRow(c, 'charges', c.params.id, {
       paid_at: date(body.paid_at, { label: 'Fecha de pago' }) || today(),
@@ -151,7 +151,7 @@ export function routes(r) {
   });
 
   // Pagar todo lo pendiente de una unidad.
-  r.post('/api/admin/units/:id/pay-all', 'tenant', async (c) => {
+  r.post('/api/admin/units/:id/pay-all', 'tenant:cartera', async (c) => {
     const body = await readJson(c.req);
     await getRow(c, 'units', c.params.id, 'Unidad');
     const res = await tenantDb(c).run(
@@ -162,12 +162,12 @@ export function routes(r) {
     return json({ ok: true, paid: res.meta.changes });
   });
 
-  r.post('/api/admin/charges/:id/unpay', 'manager', async (c) => {
+  r.post('/api/admin/charges/:id/unpay', 'manager:cartera', async (c) => {
     await updateRow(c, 'charges', c.params.id, { paid_at: null, payment_ref: null }, { touch: false });
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/charges/:id', 'manager', async (c) => {
+  r.delete('/api/admin/charges/:id', 'manager:cartera', async (c) => {
     await deleteRow(c, 'charges', c.params.id);
     return json({ ok: true });
   });
