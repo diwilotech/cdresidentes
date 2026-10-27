@@ -45,7 +45,7 @@ const dupError = (err) => {
 };
 
 export function routes(r) {
-  r.get('/api/admin/units', 'tenant', async (c) => {
+  r.get('/api/admin/units', 'tenant:unidades', async (c) => {
     const sp = c.url.searchParams;
     const [pf, pa] = propertyFilter(c, 'u.property_id');
     const [qf, qa] = searchFilter(c, ['u.number', 'u.tower', 'u.owner_name', 'u.tenant_name', 'u.owner_doc', 'u.owner_phone', 'u.vehicles']);
@@ -64,7 +64,7 @@ export function routes(r) {
     return json({ items, towers });
   });
 
-  r.get('/api/admin/units/:id', 'tenant', async (c) => {
+  r.get('/api/admin/units/:id', 'tenant:unidades', async (c) => {
     const db = tenantDb(c);
     const unit = await db.first(`${UNIT_DEBT_SQL} WHERE u.business_id = ? AND u.id = ?`, c.businessId, c.params.id);
     if (!unit) throw new HttpError(404, 'Unidad no encontrada');
@@ -80,17 +80,17 @@ export function routes(r) {
     return json({ unit, charges, pets, breakdown });
   });
 
-  r.post('/api/admin/units', 'tenant', async (c) => {
+  r.post('/api/admin/units', 'tenant:unidades', async (c) => {
     const id = await insertRow(c, 'units', pick(await readJson(c.req), FIELDS)).catch(dupError);
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/units/:id', 'tenant', async (c) => {
+  r.put('/api/admin/units/:id', 'tenant:unidades', async (c) => {
     await updateRow(c, 'units', c.params.id, pick(await readJson(c.req), FIELDS, { partial: true })).catch(dupError);
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/units/:id', 'manager', async (c) => {
+  r.delete('/api/admin/units/:id', 'manager:unidades', async (c) => {
     await getRow(c, 'units', c.params.id, 'Unidad');
     await deleteRow(c, 'units', c.params.id);
     return json({ ok: true });
@@ -98,7 +98,7 @@ export function routes(r) {
 
   // ---------- acceso al portal de propietarios ----------
 
-  r.get('/api/admin/units/:id/access', 'tenant', async (c) => {
+  r.get('/api/admin/units/:id/access', 'tenant:unidades', async (c) => {
     await getRow(c, 'units', c.params.id, 'Unidad');
     const items = await tenantDb(c).all(
       `SELECT us.id, us.email, us.name, r.relation, r.created_at, (us.pin_hash IS NOT NULL) AS has_password
@@ -110,7 +110,7 @@ export function routes(r) {
   });
 
   // Da acceso a una persona (por correo). Si aún no tiene contraseña recibe un link para crearla.
-  r.post('/api/admin/units/:id/access', 'manager', async (c) => {
+  r.post('/api/admin/units/:id/access', 'manager:unidades', async (c) => {
     const unit = await getRow(c, 'units', c.params.id, 'Unidad');
     const body = await readJson(c.req);
     const relation = oneOf(body.relation, ['owner', 'tenant'], { label: 'Relación', fallback: 'owner' });
@@ -134,7 +134,7 @@ export function routes(r) {
   });
 
   // Link nuevo para crear o restablecer la contraseña (solo si la persona no trabaja en otra administración).
-  r.post('/api/admin/units/:id/access/:userId/invite', 'manager', async (c) => {
+  r.post('/api/admin/units/:id/access/:userId/invite', 'manager:unidades', async (c) => {
     const link = await tenantDb(c).first('SELECT 1 FROM residents WHERE business_id = ? AND unit_id = ? AND user_id = ?', c.businessId, c.params.id, c.params.userId);
     if (!link) throw new HttpError(404, 'Esta persona no tiene acceso a la unidad');
     const u = await globalDb(c.env).first(
@@ -150,7 +150,7 @@ export function routes(r) {
     return json({ ok: true, inviteUrl: await residentInvite(c, c.params.userId) });
   });
 
-  r.delete('/api/admin/units/:id/access/:userId', 'manager', async (c) => {
+  r.delete('/api/admin/units/:id/access/:userId', 'manager:unidades', async (c) => {
     const db = tenantDb(c);
     const res = await db.run('DELETE FROM residents WHERE business_id = ? AND unit_id = ? AND user_id = ?', c.businessId, c.params.id, c.params.userId);
     if (!res.meta.changes) throw new HttpError(404, 'Esta persona no tiene acceso a la unidad');

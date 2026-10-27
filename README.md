@@ -8,32 +8,16 @@ Publicada en **https://cdresidentes.diwilo.com**.
 
 ## Arquitectura
 
-- **Un solo Cloudflare Worker** sirve la API (`/api/*`) y el panel (`/admin/*`, HTML sueltas en `public/`).
-- **Frontend:** HTML sueltas + Bootstrap 5 + Bootstrap Icons + Vanilla JS. Sin SPA, sin router, sin build.
-- **Backend:** router propio mínimo ([src/router.js](src/router.js)); validaciones en el Worker.
-- **Datos:** D1 (SQLite), una sola base. Toda tabla de negocio lleva `business_id`; `tenantDb()` ([src/lib/db.js](src/lib/db.js))
-  rechaza SQL sin ese filtro y el valor sale siempre de la sesión. Las escrituras pasan por [src/lib/crud.js](src/lib/crud.js),
-  que además comprueba que cada referencia (`property_id`, `unit_id`, `amenity_id`) sea del mismo negocio.
-- **Archivos:** R2 (`cdresidentes-files`). Adjuntos: `<business_id>/<tipo>/<id>/<uuid>`; logos: `<business_id>/brand/<uuid>`.
-- **Seguridad:** el login de Diwilo (correo + contraseña PBKDF2, bloqueo tras 5 fallos, sesión en D1 con cookie HttpOnly).
-  Las mutaciones exigen el encabezado `x-cdr: 1` (CSRF). Sin Cloudflare Access.
-- **IA:** Workers AI (binding `AI`, modelo Llama 3.3 70B) — dentro de Cloudflare, sin BaaS externo ([src/api/ai.js](src/api/ai.js)).
-- **Integraciones:** WhatsApp vía Evolution API ([src/integrations/whatsapp.js](src/integrations/whatsapp.js)) y correo vía
-  SMTP de Gmail con sockets TCP ([src/integrations/email.js](src/integrations/email.js)).
+Misma arquitectura común que las demás apps de Diwilo (ver [CLAUDE.md](CLAUDE.md)): shell con menú lateral/inferior, módulos activos por
+negocio asignados desde Diwilo, módulos centrales (Inicio, Marca, IA, Finanzas, Marketing, Nómina) de Diwilo Modulos y los módulos propios
+de propiedad horizontal. El selector de **Conjunto** está en la barra superior (es el ámbito de la app).
 
-```
-src/
-  index.js            entrada: API, páginas /admin, multi-tenant por ruta /<slug>
-  router.js           router con nivel de auth por ruta
-  lib/                http, db (guardia de tenant), crud, auth (contraseña + sesión + suscripción), tenant, time
-  api/                auth, platform (Diwilo), business (+equipo), dashboard, properties, units, charges,
-                      requests, pqrs, bookings, pets, notices, files, ai, portal (propietarios)
-  integrations/       whatsapp, email
-public/admin/         login, index, conjuntos, unidades, cartera, solicitudes, pqrs, reservas, mascotas,
-                      comunicados, asistente (chat), ajustes
-public/portal/        portal de propietarios: index, comunicados, cartera, unidad, mascotas, reservas
-migrations/           esquema D1
-```
+- **Un solo Cloudflare Worker** sirve la API (`/api/*`), el panel (`/<slug>` + `/staff/*`) y el portal (`/<slug>/portal`).
+- **Datos:** D1 (SQLite), una sola base. Toda tabla de negocio lleva `business_id`; `tenantDb()` ([src/lib/db.js](src/lib/db.js)) rechaza SQL sin ese filtro.
+- **Archivos:** R2 (`cdresidentes-files`). Adjuntos: `<business_id>/<tipo>/<id>/<uuid>`; logos: `<business_id>/brand/<uuid>`.
+- **Seguridad:** login de Diwilo (correo + contraseña PBKDF2, bloqueo tras 5 fallos, sesión en D1 con cookie HttpOnly). Escrituras con `x-app: 1`/`x-cdr: 1` (CSRF).
+- **IA:** módulo central `ai` (agentes, chats, asistente, consumo, MCP) con herramientas propias de Residentes ([src/ia](src/ia)); borradores con Workers AI ([src/api/ai.js](src/api/ai.js)).
+- **Integraciones:** WhatsApp vía Evolution API ([src/integrations/whatsapp.js](src/integrations/whatsapp.js)) y correo vía SMTP de Gmail ([src/integrations/email.js](src/integrations/email.js)).
 
 ## Módulos
 

@@ -19,7 +19,7 @@ const FIELDS = {
 };
 
 export function routes(r) {
-  r.get('/api/admin/pqrs', 'tenant', async (c) => {
+  r.get('/api/admin/pqrs', 'tenant:pqrs', async (c) => {
     const sp = c.url.searchParams;
     const [pf, pa] = propertyFilter(c, 'q.property_id');
     const [qf, qa] = searchFilter(c, ['q.subject', 'q.detail', 'q.reporter', 'u.number']);
@@ -48,12 +48,12 @@ export function routes(r) {
     return json({ items, stats });
   });
 
-  r.post('/api/admin/pqrs', 'tenant', async (c) => {
+  r.post('/api/admin/pqrs', 'tenant:pqrs', async (c) => {
     const id = await insertRow(c, 'pqrs', pick(await readJson(c.req), FIELDS));
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/pqrs/:id', 'tenant', async (c) => {
+  r.put('/api/admin/pqrs/:id', 'tenant:pqrs', async (c) => {
     const data = pick(await readJson(c.req), FIELDS, { partial: true });
     if (data.status) {
       const prev = await getRow(c, 'pqrs', c.params.id, 'PQRS');
@@ -64,7 +64,7 @@ export function routes(r) {
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/pqrs/:id', 'manager', async (c) => {
+  r.delete('/api/admin/pqrs/:id', 'manager:pqrs', async (c) => {
     await deleteRow(c, 'pqrs', c.params.id);
     return json({ ok: true });
   });

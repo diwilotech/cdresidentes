@@ -1,0 +1,176 @@
+/* Páginas de los módulos de Residentes dentro del shell común. Las variables del tema antiguo (--cdr-*) apuntan al tema de la app (diwilo.css),
+   así los componentes de cada página (KPI, filtros, calendario, tarjetas de conjunto, adjuntos…) toman el color y el modo del negocio. */
+:root, [data-bs-theme] {
+  --cdr-accent: var(--dw-p);
+  --cdr-accent-dark: var(--dw-p-osc);
+  --cdr-accent-soft: rgba(var(--dw-p-rgb), .12);
+  --cdr-ai: #6d28d9;
+  --cdr-ai-soft: rgba(109, 40, 217, .12);
+  --cdr-surface: var(--dw-tarjeta);
+  --cdr-surface-2: rgba(var(--bs-body-color-rgb), .04);
+  --cdr-line: var(--dw-borde);
+  --cdr-ink: var(--bs-body-color);
+  --cdr-muted: var(--bs-secondary-color);
+  --cdr-mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+.mono, .kpi-value, .num { font-family: var(--cdr-mono); }
+.text-ai { color: var(--cdr-ai) !important; }
+.btn-ai { background: var(--cdr-ai-soft); color: var(--cdr-ai); border: 1px solid color-mix(in srgb, var(--cdr-ai) 30%, transparent); }
+.btn-ai:hover, .btn-ai:focus { background: var(--cdr-ai); color: #fff; }
+/* Encabezado de página: igual al de las demás apps (título + acciones) */
+.eyebrow { display: none; }
+#cdr-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 3000; background: var(--dw-p); transform: scaleX(0); transform-origin: left; opacity: 0; transition: transform .6s ease, opacity .2s; }
+#cdr-progress.on { opacity: 1; transform: scaleX(.8); }
+#toasts { display: none; }
+.card { background: var(--dw-tarjeta); border: 1px solid var(--dw-borde); border-radius: 16px; box-shadow: var(--dw-sombra); }
+.card-header { background: transparent; font-weight: 600; border-bottom-color: var(--dw-borde); }
+.table { --bs-table-bg: transparent; }
+.modal-content { background: var(--dw-tarjeta); border: 1px solid var(--dw-borde); border-radius: 1rem; }
+.dropdown-menu { background: var(--dw-tarjeta); border-color: var(--dw-borde); }
+.btn-icon { border: 0; background: transparent; color: var(--bs-body-color); font-size: 1.35rem; padding: .25rem .5rem; }
+.avatar { display: grid; place-items: center; border-radius: 50%; background: var(--cdr-accent-soft); color: var(--dw-p); font-weight: 700; width: 2.4rem; height: 2.4rem; font-size: .8rem; flex: none; }
+.avatar-sm { width: 2rem; height: 2rem; font-size: .72rem; }
+/* Móvil: el contenido ya trae el espacio del shell */
+.page-title { font-size: 1.35rem; margin: 0; font-weight: 700; }
+.page-sub { color: var(--cdr-muted); font-size: .9rem; margin: .15rem 0 0; }
+.eyebrow { font: 700 10.5px/1 var(--cdr-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--cdr-muted); }
+.card { border: 1px solid var(--cdr-line); border-radius: .9rem; background: var(--cdr-surface); }
+.card-header { background: transparent; font-weight: 700; border-bottom-color: var(--cdr-line); padding: .8rem 1rem; }
+
+.kpi { padding: 1rem 1.1rem; height: 100%; }
+.kpi .kpi-label { font: 600 10.5px/1.2 var(--cdr-mono); color: var(--cdr-muted); text-transform: uppercase; letter-spacing: .08em; }
+.kpi .kpi-value { font-size: 1.6rem; font-weight: 700; line-height: 1.15; margin-top: .35rem; }
+.kpi .kpi-icon { font-size: 1.15rem; color: var(--cdr-accent); background: var(--cdr-accent-soft); width: 2.1rem; height: 2.1rem; border-radius: .65rem; display: grid; place-items: center; flex: none; }
+.kpi .kpi-icon.red { color: var(--bs-danger); background: rgba(var(--bs-danger-rgb), .12); }
+.kpi .kpi-icon.amber { color: var(--bs-warning); background: rgba(var(--bs-warning-rgb), .14); }
+.kpi .kpi-icon.violet { color: var(--cdr-ai); background: var(--cdr-ai-soft); }
+.stat-strip { padding: .55rem .8rem; border-left: 4px solid var(--cdr-accent); border-radius: .45rem; background: var(--cdr-surface-2); }
+.stat-strip.red { border-left-color: var(--bs-danger); }
+.stat-strip.violet { border-left-color: var(--cdr-ai); }
+.stat-strip .lbl { font: 700 10px/1.2 var(--cdr-mono); text-transform: uppercase; color: var(--cdr-muted); }
+.stat-strip .val { font: 700 .95rem/1.3 var(--cdr-mono); margin-top: 2px; }
+
+.avatar {
+  width: 2.25rem; height: 2.25rem; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cdr-accent-soft); color: var(--cdr-accent); font-weight: 700; font-size: .8rem;
+}
+.avatar-sm { width: 2rem; height: 2rem; font-size: .72rem; }
+
+.table td, .table th { vertical-align: middle; }
+.table thead th { font: 600 10.5px/1.2 var(--cdr-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--cdr-muted); }
+.table-clickable tbody tr { cursor: pointer; }
+.num { font-variant-numeric: tabular-nums; text-align: end; }
+.empty { padding: 2rem 1rem; text-align: center; color: var(--bs-secondary-color); }
+.filters { display: flex; flex-wrap: wrap; gap: .5rem; padding: .75rem 1rem; border-bottom: 1px solid var(--cdr-line); }
+.filters .form-select, .filters .form-control { width: auto; min-width: 9rem; }
+.filters .grow { flex: 1 1 14rem; }
+
+.prop-card { cursor: pointer; transition: border-color .15s, transform .15s; }
+.prop-card:hover { border-color: var(--cdr-accent); transform: translateY(-2px); }
+.prop-logo { width: 3rem; height: 3rem; border-radius: .8rem; background: var(--cdr-accent-soft); color: var(--cdr-accent); display: grid; place-items: center; font-size: 1.4rem; overflow: hidden; flex: none; }
+.prop-logo img { width: 100%; height: 100%; object-fit: cover; }
+
+.ai-insight { border: 1px solid color-mix(in srgb, var(--cdr-ai) 35%, var(--cdr-line)); background: linear-gradient(135deg, var(--cdr-ai-soft), var(--cdr-surface) 70%); }
+.ai-insight .ai-ico { width: 2.4rem; height: 2.4rem; border-radius: .8rem; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #7C3AED, #10B981); flex: none; }
+
+.file-chip { display: inline-flex; align-items: center; padding: .2rem .55rem; border: 1px solid var(--cdr-line); border-radius: 999px; font-size: .8rem; background: var(--cdr-surface-2); max-width: 100%; }
+.file-chip a { text-decoration: none; color: var(--cdr-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
+
+/* calendario de reservas */
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal .dow { font: 700 10px/1 var(--cdr-mono); text-align: center; color: var(--cdr-muted); padding: 4px 0; }
+.cal .day { min-height: 5.2rem; border: 1px solid var(--cdr-line); border-radius: .5rem; padding: 4px; background: var(--cdr-surface); cursor: pointer; overflow: hidden; }
+.cal .day.out { opacity: .35; cursor: default; }
+.cal .day.today { border-color: var(--cdr-accent); box-shadow: inset 0 0 0 1px var(--cdr-accent); }
+.cal .day .n { font: 700 11px/1 var(--cdr-mono); color: var(--cdr-muted); }
+.cal .ev { display: block; margin-top: 3px; padding: 1px 4px; border-radius: 4px; font-size: .68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--cdr-accent-soft); color: var(--cdr-accent-dark); }
+[data-bs-theme="dark"] .cal .ev { color: var(--cdr-accent); }
+.cal .ev.pending { background: rgba(var(--bs-warning-rgb), .16); color: var(--bs-warning); }
+@media (max-width: 575.98px) { .cal .day { min-height: 3.2rem; } .cal .ev { font-size: 0; height: 6px; padding: 0; } }
+
+/* ---------- chat Diwilo AI ---------- */
+@media (max-width: 991.98px) { [data-bs-theme="dark"] .draft-box { margin: .5rem 0; padding: .7rem .8rem; border: 1px dashed var(--cdr-ai); border-radius: .7rem; background: var(--cdr-surface); white-space: pre-wrap; font-size: .88rem; }
+.suggest { text-align: left; border: 1px solid var(--cdr-line); border-radius: .8rem; padding: .75rem; background: var(--cdr-surface); cursor: pointer; transition: border-color .15s, transform .15s; height: 100%; width: 100%; color: var(--cdr-ink); }
+.suggest:hover { border-color: var(--cdr-ai); transform: translateY(-2px); }
+.suggest i { color: var(--cdr-ai); }
+.typing span { display: inline-block; width: 6px; height: 6px; margin: 0 1px; border-radius: 50%; background: var(--cdr-muted); animation: blink 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: .2s; } .typing span:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+
+#toasts { z-index: 1090; }
+@media (max-width: 991.98px) { #toasts { bottom: 70px !important; } }
+@media (max-width: 575.98px) {
+  .kpi .kpi-value { font-size: 1.25rem; }
+  .hide-xs { display: none; }
+  .filters .form-select, .filters .form-control { min-width: 0; flex: 1 1 45%; }
+}
+.min-w-0 { min-width: 0; }
+
+/* ---------- transiciones entre páginas ---------- */
+/* View Transitions entre documentos (Chrome/Edge 126+, Safari 18.2+): el menú y la barra superior quedan quietos
+   y solo el contenido cambia con un fundido corto. Sin soporte, cada página entra con .cdr-enter. */
+@view-transition { navigation: auto; }
+body > .side { view-transition-name: side; }
+.topbar { view-transition-name: topbar; }
+.bottom-nav { view-transition-name: bottom-nav; }
+body > main { view-transition-name: page; }
+::view-transition-old(side), ::view-transition-old(topbar), ::view-transition-old(bottom-nav) { display: none; }
+::view-transition-new(side), ::view-transition-new(topbar), ::view-transition-new(bottom-nav) { animation: none; }
+::view-transition-group(side), ::view-transition-group(topbar), ::view-transition-group(bottom-nav) { animation-duration: 0s; }
+::view-transition-old(page) { animation: cdr-page-out .14s ease-in both; }
+::view-transition-new(page) { animation: cdr-page-in .26s cubic-bezier(.2,.8,.2,1) .04s both; }
+::view-transition-group(page) { animation-duration: .3s; }
+@keyframes cdr-page-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes cdr-page-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+/* Espacio del menú lateral reservado desde el primer pintado (no salta el contenido). */
+@media (min-width: 992px) { body:has(> main.container-fluid) { padding-left: 248px; } }
+
+/* Barra de progreso: API lenta o navegación en curso. */
+#cdr-progress {
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 2000; pointer-events: none;
+  background: linear-gradient(90deg, #10B981, #7C3AED); transform-origin: left; transform: scaleX(0); opacity: 0;
+  transition: opacity .25s ease .1s, transform .25s ease;
+}
+#cdr-progress.on { opacity: 1; transition: opacity .1s; animation: cdr-progress 2.2s cubic-bezier(.1,.7,.2,1) forwards; }
+@keyframes cdr-progress { from { transform: scaleX(.04); } to { transform: scaleX(.9); } }
+@media (prefers-reduced-motion: reduce) { #cdr-progress.on { animation: none; transform: scaleX(.6); } }
+
+/* ---------- DataTables ---------- */
+div.dt-container { padding: .75rem 1rem; }
+div.dt-container .dt-buttons .btn { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .55rem; --bs-btn-font-size: .8rem; background: var(--cdr-surface); color: var(--cdr-ink); border-color: var(--cdr-line); font-weight: 600; }
+div.dt-container .dt-buttons .btn:hover { background: var(--cdr-surface-2); }
+div.dt-container .dt-search input { min-width: 14rem; }
+div.dt-container div.dt-layout-row { margin: .4rem 0; }
+table.dataTable > tfoot > tr > th { font-family: var(--cdr-mono); font-weight: 700; border-top: 2px solid var(--cdr-line); background: var(--cdr-surface-2); }
+table.dataTable td.num, table.dataTable th.num { text-align: end; }
+table.dataTable > tbody > tr[id] { cursor: pointer; }
+.table-clickable-off table.dataTable > tbody > tr[id] { cursor: default; }
+@media (max-width: 575.98px) {
+  div.dt-container { padding: .5rem; }
+  div.dt-container .dt-search input { min-width: 0; width: 100%; }
+  div.dt-container .dt-layout-row { flex-direction: column; align-items: stretch; gap: .4rem; }
+}
+.stack-cell { line-height: 1.35; white-space: nowrap; }
+.stack-cell .k { font: 700 .72rem var(--cdr-mono); margin-right: .25rem; }
+.stack-cell .zero { color: var(--cdr-muted); }
+.total-pill { display: inline-block; padding: .2rem .55rem; border-radius: .45rem; font: 700 .85rem var(--cdr-mono); background: rgba(var(--bs-warning-rgb), .15); color: var(--bs-warning); border: 1px solid rgba(var(--bs-warning-rgb), .35); }
+.total-pill.ok { background: rgba(var(--bs-success-rgb), .12); color: var(--bs-success); border-color: rgba(var(--bs-success-rgb), .3); }
+.total-pill.bad { background: rgba(var(--bs-danger-rgb), .12); color: var(--bs-danger); border-color: rgba(var(--bs-danger-rgb), .3); }
+/* Títulos largos en dos líneas (como "Retroactivos (RTC) / Extra (EXT)") para que quepan las columnas. */
+table.dataTable > thead > tr > th { white-space: normal; max-width: 10rem; line-height: 1.35; vertical-align: bottom; }
+
+/* portal de residentes */
+.cal .day.sel { border-color: var(--cdr-ai); box-shadow: inset 0 0 0 1px var(--cdr-ai); }
+.cal .day.past { opacity: .5; cursor: default; }
+.cal .ev.mine { background: var(--cdr-ai-soft); color: var(--cdr-ai); }
+.notice-body { white-space: pre-wrap; }
+.pet-photo { width: 4.5rem; height: 4.5rem; border-radius: .9rem; object-fit: cover; background: var(--cdr-accent-soft); color: var(--cdr-accent); display: grid; place-items: center; font-size: 1.8rem; flex: none; }
+.amenity-pick .card { cursor: pointer; transition: border-color .15s; }
+.amenity-pick .card.active { border-color: var(--cdr-accent); box-shadow: inset 0 0 0 1px var(--cdr-accent); }
+.slot { display: inline-block; padding: .15rem .5rem; border-radius: .4rem; font: 600 .75rem/1.4 var(--cdr-mono); background: rgba(var(--bs-warning-rgb), .16); margin: 0 .25rem .25rem 0; }
+.slot.approved { background: var(--cdr-accent-soft); color: var(--cdr-accent-dark); }
+.slot.mine { background: var(--cdr-ai-soft); color: var(--cdr-ai); }

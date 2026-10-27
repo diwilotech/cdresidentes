@@ -18,7 +18,7 @@ const FIELDS = {
 };
 
 export function routes(r) {
-  r.get('/api/admin/requests', 'tenant', async (c) => {
+  r.get('/api/admin/requests', 'tenant:porteria', async (c) => {
     const sp = c.url.searchParams;
     const [pf, pa] = propertyFilter(c, 'rq.property_id');
     const [qf, qa] = searchFilter(c, ['rq.title', 'rq.detail', 'u.number', 'u.owner_name']);
@@ -37,18 +37,18 @@ export function routes(r) {
     return json({ items });
   });
 
-  r.post('/api/admin/requests', 'tenant', async (c) => {
+  r.post('/api/admin/requests', 'tenant:porteria', async (c) => {
     const data = pick(await readJson(c.req), FIELDS);
     const id = await insertRow(c, 'requests', { ...data, created_by: c.user.id });
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/requests/:id', 'tenant', async (c) => {
+  r.put('/api/admin/requests/:id', 'tenant:porteria', async (c) => {
     await updateRow(c, 'requests', c.params.id, pick(await readJson(c.req), FIELDS, { partial: true }));
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/requests/:id', 'manager', async (c) => {
+  r.delete('/api/admin/requests/:id', 'manager:porteria', async (c) => {
     await deleteRow(c, 'requests', c.params.id);
     return json({ ok: true });
   });

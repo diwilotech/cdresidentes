@@ -1,12 +1,22 @@
-// CD Residentes — Worker monolítico: API + panel admin (HTML estáticos).
+// CD Residentes — Worker único: API + archivos de public/.
+//   /            login (o al panel de su administración si ya hay sesión)
+//   /<dirección> panel de la administración (ej. /altos-de-la-colina): una sola dirección fija; cada módulo se carga dentro (marco) sin cambiar la URL
+//   /staff/*     páginas de cada módulo (las carga el panel; exigen sesión con negocio). Abiertas directo llevan al panel.
+//   /<dirección>/portal/…  portal de propietarios y residentes (cédula o correo)
+//   /api/*       API (src/api/*.js); /api/platform/* solo para Diwilo Web por RPC
+//   /mcp         MCP de la administración (token de IA → Conexiones)
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { platformCall } from './lib/platform-rpc.js';
 import { Router } from './router.js';
-import { HttpError, errorResponse } from './lib/http.js';
+import { HttpError, errorResponse, json } from './lib/http.js';
 import { authenticate, loadSession, loadPortalSession } from './lib/auth.js';
-import { slugFromPath, businessBySlug, defaultSlug, isMember, isResident, homePath } from './lib/tenant.js';
+import { slugFromPath, businessBySlug, isMember, isResident, homePath, RESERVED } from './lib/tenant.js';
 import * as authApi from './api/auth.js';
 import * as platformApi from './api/platform.js';
+import * as platformModulesApi from './api/platform-modules.js';
+import * as meApi from './api/me.js';
+import * as settingsApi from './api/settings.js';
+import * as mcpApi from './api/mcp.js';
 import * as businessApi from './api/business.js';
 import * as dashboardApi from './api/dashboard.js';
 import * as propertiesApi from './api/properties.js';
@@ -21,24 +31,32 @@ import * as noticesApi from './api/notices.js';
 import * as filesApi from './api/files.js';
 import * as aiApi from './api/ai.js';
 import * as portalApi from './api/portal.js';
+import { isCentralApi, centralModuleOf, centralApi, centralPage, centralAsset, centralPublic } from './lib/central.js';
+import { CENTRALES } from './lib/modules.js';
 
 const router = new Router();
-// platform va antes que cualquier ruta con parámetros de negocio.
-for (const mod of [platformApi, authApi, businessApi, dashboardApi, propertiesApi, unitsApi, billingApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi, portalApi]) {
-  mod.routes(router);
-}
+// platform va primero. Agrega aquí cada módulo nuevo de src/api/ (y su entrada en modulos.app.json).
+// Los horizontales (Inicio, Marca, IA, Finanzas, Marketing, Nómina) no van aquí: se piden en modulos.app.json → "centrales" y viven en Diwilo Modulos.
+const MODULE_APIS = [businessApi, dashboardApi, propertiesApi, unitsApi, billingApi, chargesApi, requestsApi, pqrsApi, bookingsApi, petsApi, noticesApi, filesApi, aiApi, portalApi];
+for (const mod of [platformApi, platformModulesApi, authApi, meApi, settingsApi, mcpApi, ...MODULE_APIS]) if (typeof mod.routes === 'function') mod.routes(router);
 
 const SECURITY_HEADERS = {
-  'x-frame-options': 'DENY',
+  'x-frame-options': 'SAMEORIGIN',   // el panel carga las páginas de los módulos en un marco del mismo sitio
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'same-origin',
 };
 
+function withHeaders(res, headers) {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(headers)) out.headers.set(k, v);
+  return out;
+}
+
 async function handleApi(req, env, ctx, url) {
   const { route, params } = router.match(req.method, url.pathname);
-  // Protección CSRF: toda mutación debe traer este encabezado (fuerza preflight entre orígenes).
-  // Diwilo Web (nivel 'platform') no usa cookies: entra por RPC (Platform.call).
-  if (req.method !== 'GET' && route.auth !== 'platform' && req.headers.get('x-cdr') !== '1') {
+  // CSRF: toda escritura del navegador trae este encabezado (fuerza preflight entre orígenes).
+  // Diwilo Web (nivel 'platform') llega por RPC y no usa cookies.
+  if (req.method !== 'GET' && route.auth !== 'platform' && req.headers.get('x-cdr') !== '1' && req.headers.get('x-app') !== '1') {
     throw new HttpError(403, 'Solicitud no permitida');
   }
   const c = { req, env, ctx, url, params };
@@ -46,13 +64,29 @@ async function handleApi(req, env, ctx, url) {
   return route.handler(c);
 }
 
+// Módulos centrales: la app verifica sesión, negocio, rol, módulo activo y CSRF; Diwilo Modulos hace el resto.
+async function handleCentral(req, env, ctx, url) {
+  if (req.method !== 'GET' && req.headers.get('x-app') !== '1') throw new HttpError(403, 'Solicitud no permitida');
+  const c = { req, env, ctx, url, params: {} };
+  await authenticate(c, `tenant:${centralModuleOf(url.pathname)}`);
+  // Guía de uso del módulo para el MCP (se arma aquí con su manifiesto y las herramientas del rol)
+  if (req.method === 'GET' && /^\/api\/[a-z]+\/mcp$/.test(url.pathname)) return json(await mcpApi.guiaDeModulo(c, centralModuleOf(url.pathname), url.origin));
+  return centralApi(c);
+}
+
+const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/;
+const aPanel = (url, slug, go) => Response.redirect(`${url.origin}/${slug}${go ? `?go=${encodeURIComponent(go)}` : ''}`, 302);
+// Páginas viejas del panel (/admin/<sección>) → página del módulo
+const PAGINA = { '': '/staff/', conjuntos: '/staff/conjuntos.html', unidades: '/staff/unidades.html', cartera: '/staff/cartera.html', solicitudes: '/staff/porteria.html', pqrs: '/staff/pqrs.html', reservas: '/staff/reservas.html',
+  mascotas: '/staff/mascotas.html', comunicados: '/staff/comunicados.html', asistente: '/staff/ai.html', ajustes: '/staff/ajustes.html' };
+
 const assetAt = (env, req, path) => {
   const u = new URL(req.url);
   u.pathname = path;
   return env.ASSETS.fetch(new Request(u, req));
 };
 
-// Las redirecciones de los assets (p. ej. /admin -> /admin/) deben conservar el prefijo /<slug>.
+// Portal: conserva el prefijo /<slug> en las redirecciones de los assets (/portal -> /portal/).
 function keepPrefix(res, prefix, url) {
   const loc = res.status >= 300 && res.status < 400 && res.headers.get('location');
   if (!loc) return res;
@@ -62,34 +96,35 @@ function keepPrefix(res, prefix, url) {
 
 const notFound = (msg) => new HttpError(404, msg || 'Esta página no existe.');
 
-// /<slug> y /<slug>/admin/…
+// /<slug>, /<slug>/admin/… (viejo) y /<slug>/portal/…
 async function handleBusinessPath(req, env, url, slug) {
   const rest = url.pathname.slice(slug.length + 1) || '/';
   const business = await businessBySlug(env, slug);
   if (!business) {
     // Dirección anterior (la administración cambió de enlace): redirige a la actual conservando el resto.
-    const alias = await env.DB.prepare(
-      'SELECT b.slug FROM business_slug_aliases a JOIN businesses b ON b.id = a.business_id WHERE a.slug = ?',
-    ).bind(slug).first();
+    const alias = await env.DB.prepare('SELECT b.slug FROM business_slug_aliases a JOIN businesses b ON b.id = a.business_id WHERE a.slug = ?').bind(slug).first();
     if (alias) return Response.redirect(`${url.origin}/${alias.slug}${rest === '/' ? '' : rest}${url.search}`, 301);
   }
   if (!business || business.status !== 'active') throw notFound('No encontramos esta administración.');
 
-  if (rest === '/') return Response.redirect(`${url.origin}/${slug}/admin/`, 302);
-  if (rest === '/admin' || rest.startsWith('/admin/')) {
-    if (rest.startsWith('/admin/assets/')) return assetAt(env, req, rest);
-    const page = rest.replace(/\.html$/, '').replace(/\/$/, '');
-    if (page !== '/admin/login') {
-      const session = await loadSession(req, env);
-      if (!session) {
-        return Response.redirect(`${url.origin}/${slug}/admin/login?next=${encodeURIComponent(url.pathname + url.search)}`, 302);
-      }
-      // Propietarios y residentes (sin membresía) no entran al panel: van a su portal.
-      if (!(await isMember(env, session.user_id, slug)) && (await isResident(env, session.user_id, slug))) {
-        return Response.redirect(`${url.origin}/${slug}/portal/`, 302);
-      }
+  // Panel: sesión de la administración → panel; propietarios y residentes → su portal; sin sesión → ingreso.
+  if (rest === '/') {
+    const s = await loadSession(req, env);
+    if (!s) return withHeaders(await assetAt(env, req, '/'), SECURITY_HEADERS);
+    if (!(await isMember(env, s.user_id, slug))) {
+      if (await isResident(env, s.user_id, slug)) return Response.redirect(`${url.origin}/${slug}/portal/`, 302);
+      throw new HttpError(403, 'No tienes acceso a esta administración.');
     }
-    return keepPrefix(await assetAt(env, req, rest), `/${slug}`, url);
+    // El panel va con la administración de la dirección: si la sesión estaba en otra, se cambia (es miembro de ambas)
+    if (s.business_slug !== slug) {
+      await env.DB.prepare('UPDATE sessions SET business_id = ? WHERE id = ?').bind(business.id, s.session_id).run();
+    }
+    return withHeaders(await assetAt(env, req, '/staff/panel'), { ...SECURITY_HEADERS, 'cache-control': 'no-store' });
+  }
+  // Direcciones viejas del panel: /<slug>/admin/<sección> → el panel con esa página dentro
+  if (rest === '/admin' || rest.startsWith('/admin/')) {
+    const sec = rest.replace(/^\/admin\/?/, '').replace(/\.html$/, '').replace(/\/$/, '');
+    return aPanel(url, slug, PAGINA[sec] ? `${PAGINA[sec]}${url.search}` : null);
   }
   // Portal de propietarios: /<slug>/portal/… (los datos los filtra la API por las unidades de la persona).
   // Sin sesión se entra por /<slug>/portal/login (apartamento + cédula).
@@ -103,66 +138,60 @@ async function handleBusinessPath(req, env, url, slug) {
   throw notFound();
 }
 
-// /admin/… sin negocio: se lleva al negocio de donde viene (Referer) o al del usuario.
-async function handleLegacyAdmin(req, env, url) {
-  if (url.pathname.startsWith('/admin/assets/')) return env.ASSETS.fetch(req);
-  let slug = null;
-  const ref = req.headers.get('referer');
-  if (ref) {
-    try {
-      const r = new URL(ref);
-      const s = r.origin === url.origin && slugFromPath(r.pathname);
-      if (s && (r.pathname === `/${s}/admin` || r.pathname.startsWith(`/${s}/admin/`))) slug = s;
-    } catch { /* Referer inválido */ }
-  }
-  const session = await loadSession(req, env);
-  // Con sesión, solo se sigue al negocio de origen si la persona es miembro (evita bucles).
-  if (slug && session && !(await isMember(env, session.user_id, slug))) slug = null;
-  if (!slug && session) slug = await defaultSlug(env, session);
-  if (slug) return Response.redirect(`${url.origin}/${slug}${url.pathname}${url.search}`, 302);
-  // Sin panel pero con unidades: a su portal.
-  const home = session && (await homePath(env, session));
-  if (home) return Response.redirect(`${url.origin}${home}`, 302);
-  if (!session) {
-    // El login genérico vive en la raíz "/". /admin/login (también con #invite=…) redirige ahí:
-    // el navegador conserva el fragmento.
-    const isLogin = /^\/admin\/login(\.html)?$/.test(url.pathname);
-    const isHome = /^\/admin\/?$/.test(url.pathname);
-    const next = isLogin ? url.search : isHome ? '' : `?next=${encodeURIComponent(url.pathname + url.search)}`;
-    return Response.redirect(`${url.origin}/${next}`, 302);
-  }
-  return env.ASSETS.fetch(req);  // sesión sin negocios
-}
-
-function withHeaders(res, headers) {
-  const out = new Response(res.body, res);
-  for (const [k, v] of Object.entries(headers)) out.headers.set(k, v);
-  return out;
-}
-
 const worker = {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const isApi = url.pathname.startsWith('/api/');
     try {
+      if (isApi && isCentralApi(url.pathname)) return withHeaders(await handleCentral(req, env, ctx, url), SECURITY_HEADERS);
       if (isApi) return withHeaders(await handleApi(req, env, ctx, url), SECURITY_HEADERS);
-      if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
-        return withHeaders(await handleLegacyAdmin(req, env, url), SECURITY_HEADERS);
+      if (url.pathname === '/mcp') return withHeaders(await mcpApi.mcpFetch(req, env, ctx), SECURITY_HEADERS);
+      // Los chats de clientes se muestran dentro de las webs y tarjetas (iframe): su respuesta trae sus propios encabezados de marco
+      if (url.pathname.startsWith('/chat/') || url.pathname.startsWith('/v1/')) return withHeaders(await centralPublic(env, url, req), { 'x-content-type-options': 'nosniff' });
+      if (url.pathname.startsWith('/l/') || url.pathname.startsWith('/validar/') || url.pathname.startsWith('/c/')) return withHeaders(await centralPublic(env, url, req), SECURITY_HEADERS);
+      // Código de las páginas de los módulos centrales
+      if (url.pathname.startsWith('/m/')) return withHeaders(await centralAsset(env, url.pathname), SECURITY_HEADERS);
+
+      // Raíz: login genérico (sin administración en la URL). Con sesión, directo a su panel o a su portal.
+      if (url.pathname === '/') {
+        const session = await loadSession(req, env);
+        if (session) {
+          const home = await homePath(env, session);
+          if (home) return Response.redirect(`${url.origin}${home}`, 302);
+        }
+        return withHeaders(await assetAt(env, req, '/'), SECURITY_HEADERS);
       }
-      // /portal sin negocio: al de la persona (o al login).
+
+      // Direcciones viejas sin administración: /admin/… → al panel de la persona
+      if (url.pathname === '/admin' || (url.pathname.startsWith('/admin/') && !url.pathname.startsWith('/admin/assets/'))) {
+        const session = await loadSession(req, env);
+        const home = session && (await homePath(env, session));
+        const sec = url.pathname.replace(/^\/admin\/?/, '').replace(/\.html$/, '').replace(/\/$/, '');
+        if (home && session.business_slug) return aPanel(url, home.slice(1), PAGINA[sec] || null);
+        return Response.redirect(`${url.origin}${home || '/'}`, 302);
+      }
+      // /portal sin administración: al de la persona (o al login).
       if (url.pathname === '/portal' || url.pathname.startsWith('/portal/')) {
         const session = await loadSession(req, env);
         const home = session && (await homePath(env, session));
         return Response.redirect(`${url.origin}${home || '/'}`, 302);
       }
-      // Raíz: login genérico (sin negocio en la URL). Con sesión, directo a su negocio.
-      if (url.pathname === '/') {
-        const session = await loadSession(req, env);
-        if (session) return Response.redirect(`${url.origin}${(await homePath(env, session)) || '/admin/'}`, 302);
-        return withHeaders(await assetAt(env, req, '/admin/login'), SECURITY_HEADERS);
+
+      // Páginas de los módulos (/staff/…): las carga el panel dentro de un marco; abiertas directo llevan al panel.
+      if (url.pathname === '/staff' || url.pathname.startsWith('/staff/')) {
+        const s = await loadSession(req, env);
+        if (!s?.business_id || !s.role) return Response.redirect(`${url.origin}/`, 302);
+        if (req.method === 'GET' && req.headers.get('sec-fetch-dest') === 'document' && !url.pathname.startsWith('/staff/panel') && (/^\/staff\/?$/.test(url.pathname) || url.pathname.endsWith('.html') || !/\.[a-z0-9]+$/i.test(url.pathname))) {
+          return aPanel(url, s.business_slug, url.pathname + url.search);
+        }
+        const central = CENTRALES.find((id) => url.pathname === `/staff/${id}.html` || url.pathname === `/staff/${id}`);
+        if (central) return withHeaders(await centralPage(env, req, central), SECURITY_HEADERS);
+        return withHeaders(await env.ASSETS.fetch(req), { ...SECURITY_HEADERS, 'cache-control': 'no-store' });
       }
+
+      // /<dirección de la administración>[/…]
       const slug = slugFromPath(url.pathname);
-      if (slug) return withHeaders(await handleBusinessPath(req, env, url, slug), SECURITY_HEADERS);
+      if (slug && SLUG.test(slug) && !RESERVED.has(slug)) return withHeaders(await handleBusinessPath(req, env, url, slug), SECURITY_HEADERS);
       return env.ASSETS.fetch(req);
     } catch (err) {
       if (isApi) return errorResponse(err);
@@ -178,6 +207,16 @@ const worker = {
     }
   },
 };
+
+// Tareas diarias de los módulos propios (cron de wrangler.jsonc, 3:00 a. m. Colombia): cada módulo puede exportar daily(env).
+// Las de los módulos centrales corren una sola vez en Diwilo Modulos.
+worker.scheduled = async (event, env, ctx) => {
+  for (const mod of MODULE_APIS) {
+    if (typeof mod.daily !== 'function') continue;
+    ctx.waitUntil(mod.daily(env).catch((e) => console.error('tarea diaria', e.message)));
+  }
+};
+
 export default worker;
 
 // Diwilo Web administra esta app por RPC (service binding con entrypoint "Platform"), sin clave compartida.

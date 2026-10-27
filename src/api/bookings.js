@@ -52,7 +52,7 @@ export async function assertFree(c, data, exceptId = '') {
 }
 
 export function routes(r) {
-  r.get('/api/admin/amenities', 'tenant', async (c) => {
+  r.get('/api/admin/amenities', 'tenant:reservas', async (c) => {
     const [pf, pa] = propertyFilter(c, 'a.property_id');
     const items = await tenantDb(c).all(
       `SELECT a.*, p.name AS property_name FROM amenities a JOIN properties p ON p.id = a.property_id
@@ -62,23 +62,23 @@ export function routes(r) {
     return json({ items });
   });
 
-  r.post('/api/admin/amenities', 'manager', async (c) => {
+  r.post('/api/admin/amenities', 'manager:reservas', async (c) => {
     const id = await insertRow(c, 'amenities', pick(await readJson(c.req), AMENITY));
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/amenities/:id', 'manager', async (c) => {
+  r.put('/api/admin/amenities/:id', 'manager:reservas', async (c) => {
     await updateRow(c, 'amenities', c.params.id, pick(await readJson(c.req), AMENITY, { partial: true }), { touch: false });
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/amenities/:id', 'manager', async (c) => {
+  r.delete('/api/admin/amenities/:id', 'manager:reservas', async (c) => {
     await deleteRow(c, 'amenities', c.params.id);
     return json({ ok: true });
   });
 
   // Reservas de un mes (?month=YYYY-MM).
-  r.get('/api/admin/bookings', 'tenant', async (c) => {
+  r.get('/api/admin/bookings', 'tenant:reservas', async (c) => {
     const month = c.url.searchParams.get('month') || new Date().toISOString().slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(month)) throw new HttpError(400, 'Mes inválido');
     const [pf, pa] = propertyFilter(c, 'a.property_id');
@@ -92,7 +92,7 @@ export function routes(r) {
     return json({ items, month });
   });
 
-  r.post('/api/admin/bookings', 'tenant', async (c) => {
+  r.post('/api/admin/bookings', 'tenant:reservas', async (c) => {
     const data = pick(await readJson(c.req), BOOKING);
     const amenity = await getRow(c, 'amenities', data.amenity_id, 'Zona');
     if (!amenity.active) throw new HttpError(400, 'La zona no está disponible para reservas');
@@ -102,7 +102,7 @@ export function routes(r) {
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/bookings/:id', 'tenant', async (c) => {
+  r.put('/api/admin/bookings/:id', 'tenant:reservas', async (c) => {
     const prev = await getRow(c, 'bookings', c.params.id, 'Reserva');
     const data = pick(await readJson(c.req), BOOKING, { partial: true });
     const merged = { ...prev, ...data };
@@ -113,7 +113,7 @@ export function routes(r) {
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/bookings/:id', 'tenant', async (c) => {
+  r.delete('/api/admin/bookings/:id', 'tenant:reservas', async (c) => {
     await deleteRow(c, 'bookings', c.params.id);
     return json({ ok: true });
   });

@@ -39,22 +39,22 @@ export function routes(r) {
     return json({ ...p, logo: brandUrl(logo_key) });
   });
 
-  r.post('/api/admin/properties', 'manager', async (c) => {
+  r.post('/api/admin/properties', 'manager:conjuntos', async (c) => {
     const id = await insertRow(c, 'properties', pick(await readJson(c.req), FIELDS));
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/properties/:id', 'manager', async (c) => {
+  r.put('/api/admin/properties/:id', 'manager:conjuntos', async (c) => {
     await updateRow(c, 'properties', c.params.id, pick(await readJson(c.req), FIELDS, { partial: true }));
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/properties/:id', 'manager', async (c) => {
+  r.delete('/api/admin/properties/:id', 'manager:conjuntos', async (c) => {
     await deleteRow(c, 'properties', c.params.id);
     return json({ ok: true });
   });
 
-  r.post('/api/admin/properties/:id/logo', 'manager', async (c) => {
+  r.post('/api/admin/properties/:id/logo', 'manager:conjuntos', async (c) => {
     const prev = await getRow(c, 'properties', c.params.id, 'Conjunto');
     const file = await readImage(c);
     const key = `${c.businessId}/brand/${uuid()}`;

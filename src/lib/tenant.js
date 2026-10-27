@@ -1,6 +1,6 @@
 // Multi-tenant por ruta: cada administración vive en /<slug> (p. ej. /altos-de-la-colina).
-//   /<slug>           redirige al panel
-//   /<slug>/admin/…   panel (la API recibe el negocio en el encabezado x-business)
+//   /<slug>           el panel de la administración (shell común; cada módulo se carga en un marco: /staff/<modulo>.html)
+//   /<slug>/portal/…  portal de propietarios y residentes
 import { HttpError } from './http.js';
 import { globalDb } from './db.js';
 
@@ -8,6 +8,7 @@ import { globalDb } from './db.js';
 export const RESERVED = new Set([
   'admin', 'api', 'assets', 'login', 'logout', 'static', 'www', 'app',
   'favicon.ico', 'robots.txt', 'cdn-cgi', 'platform', 'public', 'diwilo',
+  'staff', 'mcp', 'm', 'l', 'c', 'chat', 'v1', 'validar', 'css', 'js', 'icons', 'manifest.json', 'sw.js', 'privacidad', 'dmca', 'portal', 'ver',
 ]);
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 
@@ -67,7 +68,7 @@ export async function isResident(env, userId, slug) {
 // A dónde entra una sesión: su panel (si es del equipo) o su portal de residente.
 export async function homePath(env, session) {
   const s = await defaultSlug(env, session);
-  if (s) return `/${s}/admin/`;
+  if (s) return `/${s}`;
   const r = await residentSlug(env, session.user_id);
   return r ? `/${r}/portal/` : null;
 }

@@ -1,48 +1,56 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Propietarios · CD Residentes</title>
-  <script>document.documentElement.setAttribute('data-bs-theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')</script>
-  <link rel="expect" href="#cdr-ready" blocking="render">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="/admin/assets/app.css" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Propietarios · CD Residentes</title>
+<meta name="robots" content="noindex">
+<!-- Tema guardado: se aplica antes de pintar para que no parpadee (luego /api/me lo confirma) -->
+<script>try{var t=JSON.parse(localStorage.getItem('dw_tema')||'{}');document.documentElement.setAttribute('data-dw-tema',t.tema||'turquesa');document.documentElement.setAttribute('data-bs-theme',t.modo||'light')}catch(e){}</script>
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="/css/diwilo.css" rel="stylesheet">
+<link href="/css/residentes.css" rel="stylesheet">
 </head>
-<body>
-  <main class="container-fluid px-3 px-lg-4 py-4" style="max-width:1400px">
-    <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-      <div>
-        <div class="eyebrow">Directorio activo</div>
-        <h1 class="page-title">Propietarios y unidades <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
-        <p class="page-sub">Copropietarios y arrendatarios con coeficientes, áreas y estado financiero.</p>
-      </div>
-      <button class="btn btn-primary" id="newBtn"><i class="bi bi-person-plus me-1"></i>Añadir propietario</button>
+<body class="dw">
+<div id="dw-shell"></div>
+<main class="dw-main" data-titulo="Propietarios" data-modulo="unidades">
+  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+      <div class="eyebrow">Directorio activo</div>
+      <h1 class="page-title">Propietarios y unidades <span class="text-body-secondary fw-normal fs-6" id="count"></span></h1>
+      <p class="page-sub">Copropietarios y arrendatarios con coeficientes, áreas y estado financiero.</p>
     </div>
+    <button class="btn btn-primary" id="newBtn"><i class="bi bi-person-plus me-1"></i>Añadir propietario</button>
+  </div>
 
-    <div class="card ai-insight mb-3 d-none" id="insight"><div class="card-body d-flex gap-3 align-items-center flex-wrap">
-      <div class="ai-ico"><i class="bi bi-stars"></i></div>
-      <div class="flex-grow-1 small" id="insightText"></div>
-      <a class="btn btn-sm btn-ai" id="insightBtn" href="/admin/asistente"><i class="bi bi-stars me-1"></i>Resolver con IA</a>
-    </div></div>
+  <div class="card ai-insight mb-3 d-none" id="insight"><div class="card-body d-flex gap-3 align-items-center flex-wrap">
+    <div class="ai-ico"><i class="bi bi-stars"></i></div>
+    <div class="flex-grow-1 small" id="insightText"></div>
+    <a class="btn btn-sm btn-ai" id="insightBtn" href="/staff/ai.html"><i class="bi bi-stars me-1"></i>Resolver con IA</a>
+  </div></div>
 
-    <div class="card">
-      <div class="filters">
-        <select id="tower" class="form-select"><option value="">Torre: todas</option></select>
-        <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
-        <select id="debt" class="form-select"><option value="">Estado: todos</option><option value="0">Al día</option><option value="1">En mora</option></select>
-        <button class="btn btn-outline-secondary" id="reset" title="Restaurar filtros"><i class="bi bi-arrow-counterclockwise"></i></button>
-      </div>
-      <table class="table table-hover align-middle w-100" id="rows"></table>
+  <div class="card">
+    <div class="filters">
+      <select id="tower" class="form-select"><option value="">Torre: todas</option></select>
+      <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
+      <select id="debt" class="form-select"><option value="">Estado: todos</option><option value="0">Al día</option><option value="1">En mora</option></select>
+      <button class="btn btn-outline-secondary" id="reset" title="Restaurar filtros"><i class="bi bi-arrow-counterclockwise"></i></button>
     </div>
-  </main>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="/admin/assets/app.js"></script>
-  <script src="/admin/assets/cuenta-cobro.js"></script>
-  <script>
+    <table class="table table-hover align-middle w-100" id="rows"></table>
+  </div>
+  
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/crud.js"></script>
+<script src="/js/shell.js"></script>
+<script src="/js/residentes.js"></script>
+<script src="/admin/assets/cuenta-cobro.js"></script>
+<script>
     (async () => {
       if (!(await App.init('unidades'))) return;
       const { esc, money, unitLabel } = App;
@@ -114,7 +122,7 @@
           debtors.forEach((u) => (byTower[u.tower || 'Sin torre'] = (byTower[u.tower || 'Sin torre'] || 0) + 1));
           const [worst, n] = Object.entries(byTower).sort((a, b) => b[1] - a[1])[0];
           $('insightText').innerHTML = `<span class="eyebrow text-ai">AI morosidad insight</span><br><strong>${debtors.length}</strong> unidades en mora en esta vista; <strong>${esc(worst)}</strong> concentra ${n}. Total vencido ${money(debtors.reduce((s, u) => s + u.overdue, 0))}.`;
-          $('insightBtn').href = `/admin/asistente?q=${encodeURIComponent(`Redacta una circular cordial de cobro para ${worst} y prioriza las unidades con más días de atraso`)}`;
+          $('insightBtn').href = `/staff/ai.html`;
           $('insight').classList.remove('d-none');
         } else $('insight').classList.add('d-none');
       }
@@ -161,7 +169,7 @@
               ${pending.length ? `<button class="btn btn-sm btn-primary" data-payall><i class="bi bi-check2-all me-1"></i>Registrar pago total</button>` : ''}
               <button class="btn btn-sm btn-ai" data-msg><i class="bi bi-stars me-1"></i>${u.overdue ? 'Cobrar con IA' : 'Enviar mensaje'}</button>
               <button class="btn btn-sm btn-outline-secondary" data-pdf><i class="bi bi-file-earmark-pdf me-1"></i>Cuenta de cobro</button>
-              <a class="btn btn-sm btn-outline-secondary" href="/admin/cartera?unit=${esc(u.id)}"><i class="bi bi-receipt me-1"></i>Ver en cartera</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/staff/cartera.html?unit=${esc(u.id)}"><i class="bi bi-receipt me-1"></i>Ver en cartera</a>
             </div>
             <div class="eyebrow mb-2">Movimientos</div>
             <div class="table-responsive mb-3" style="max-height:16rem"><table class="table table-sm small mb-0"><thead><tr><th>Concepto</th><th>Vence</th><th class="num">Valor</th><th>Estado</th></tr></thead><tbody>
@@ -291,7 +299,7 @@
       App.onProperty(load);
       load();
     })();
-  </script>
-  <span id="cdr-ready" hidden></span>
+  
+</script>
 </body>
 </html>
