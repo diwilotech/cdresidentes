@@ -9,7 +9,7 @@ Publicada en **https://cdresidentes.diwilo.com**.
 ## Arquitectura
 
 Misma arquitectura común que las demás apps de Diwilo (ver [CLAUDE.md](CLAUDE.md)): shell con menú lateral/inferior, módulos activos por
-negocio asignados desde Diwilo, módulos centrales (Inicio, Marca, IA, Finanzas, Marketing, Nómina) de Diwilo Modulos y los módulos propios
+negocio asignados desde Diwilo, módulos centrales (Inicio, Marca, IA, Finanzas, Marketing, Nómina, WhatsApp) de Diwilo Modulos y los módulos propios
 de propiedad horizontal. El selector de **Conjunto** está en la barra superior (es el ámbito de la app).
 
 - **Un solo Cloudflare Worker** sirve la API (`/api/*`), el panel (`/<slug>` + `/staff/*`) y el portal (`/<slug>/portal`).

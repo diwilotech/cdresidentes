@@ -126,6 +126,17 @@ export async function centralPublic(env, url, req) {
     }
     return new Response(r.body, { status: r.status, headers: r.headers });
   }
+  // Webhook de WhatsApp (módulo WhatsApp): /wa/<código> = verificación de Meta (GET) y mensajes entrantes (POST)
+  if (url.pathname.startsWith('/wa/') && CENTRALES.includes('whatsapp')) {
+    if (req.method !== 'GET' && req.method !== 'POST') return new Response('Método no permitido', { status: 405 });
+    const slug = decodeURIComponent(url.pathname.slice(4));
+    const dueno = await need(env).whatsappNegocio(APP.id, slug);
+    if (!dueno) return notFound();
+    const biz = await env.DB.prepare("SELECT 1 FROM businesses WHERE id = ? AND status = 'active' AND archived_at IS NULL").bind(dueno).first();
+    if (!biz || !(await activeModuleIds(env, dueno)).includes('whatsapp')) return notFound();
+    const r = await need(env).whatsapp(APP.id, slug, { method: req.method, query: url.search, body: req.method === 'POST' ? (await req.text()).slice(0, 1000000) : null, sig: req.headers.get('x-hub-signature-256') });
+    return new Response(r.body, { status: r.status, headers: r.headers });
+  }
   // API pública del negocio con clave (IA → Conexiones): solo lectura de conversaciones y contactos
   if (url.pathname.startsWith('/v1/') && CENTRALES.includes('ai')) {
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, OPTIONS' };

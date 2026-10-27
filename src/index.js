@@ -147,7 +147,7 @@ const worker = {
       if (isApi) return withHeaders(await handleApi(req, env, ctx, url), SECURITY_HEADERS);
       if (url.pathname === '/mcp') return withHeaders(await mcpApi.mcpFetch(req, env, ctx), SECURITY_HEADERS);
       // Los chats de clientes se muestran dentro de las webs y tarjetas (iframe): su respuesta trae sus propios encabezados de marco
-      if (url.pathname.startsWith('/chat/') || url.pathname.startsWith('/v1/')) return withHeaders(await centralPublic(env, url, req), { 'x-content-type-options': 'nosniff' });
+      if (url.pathname.startsWith('/chat/') || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/wa/')) return withHeaders(await centralPublic(env, url, req), { 'x-content-type-options': 'nosniff' });
       if (url.pathname.startsWith('/l/') || url.pathname.startsWith('/validar/') || url.pathname.startsWith('/c/')) return withHeaders(await centralPublic(env, url, req), SECURITY_HEADERS);
       // Código de las páginas de los módulos centrales
       if (url.pathname.startsWith('/m/')) return withHeaders(await centralAsset(env, url.pathname), SECURITY_HEADERS);
