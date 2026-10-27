@@ -38,13 +38,35 @@ try {
     await page.select('[data-sede-select]', P);
     await new Promise((r) => setTimeout(r, 1500));
     console.log(vista, 'inicio con conjunto:', (await texto()).slice(0, 160), '|', (await frame().evaluate(() => document.body.innerText)).replace(/\s+/g, ' ').slice(200, 520));
-    for (const mod of ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'reservas', 'mascotas', 'comunicados', 'ajustes', 'equipo', 'finanzas', 'marketing', 'marca', 'ai', 'nomina']) {
+    for (const mod of ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'mascotas', 'ajustes', 'equipo', 'finanzas', 'marketing', 'marca', 'ai', 'nomina']) {
       await page.evaluate((m) => { const a = document.querySelector(`.dw-nav a[data-mod="${m}"]`) || document.querySelector(`.dw-bottom a[data-mod="${m}"]`); if (a) a.click(); else document.getElementById('dw-frame').src = `/staff/${m}.html`; }, mod);
       await new Promise((r) => setTimeout(r, 2200));
       const t = await texto();
       console.log(vista, mod, '→', t.slice(0, 110));
       if (!t || /Cargando…$/.test(t) && t.length < 25) problems.push(`${vista}/${mod}: pantalla vacía o cargando`);
     }
+    // Portería: pestañas Reservas (mes y semana) y Comunicados
+    await page.evaluate(() => { document.getElementById('dw-frame').src = '/staff/porteria?tab=reservas'; });
+    await new Promise((r) => setTimeout(r, 2500));
+    await frame().evaluate(async (P) => {
+      const h = { 'content-type': 'application/json', 'x-app': '1' };
+      const hoy = new Date(); const d = (n) => { const x = new Date(hoy); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+      const z = await (await fetch('/api/admin/amenities', { method: 'POST', headers: h, body: JSON.stringify({ property_id: P, name: 'Salón ' + Date.now().toString(36), fee: 50000, fee_unit: 'dia' }) })).json();
+      for (const [a, b, st] of [[0, 2, 'approved'], [4, 4, 'pending'], [6, 7, 'rejected']]) await fetch('/api/admin/bookings', { method: 'POST', headers: h, body: JSON.stringify({ amenity_id: z.id, date: d(a), end_date: b > a ? d(b) : '', start_time: '14:00', end_time: '18:00', status: st }) });
+    }, P);
+    await frame().evaluate(() => document.querySelector('#viewSw [data-view="month"]').click());
+    await new Promise((r) => setTimeout(r, 1500));
+    const cal = await frame().evaluate(() => ({ mes: document.querySelectorAll('#cal .mv .day').length, evs: document.querySelectorAll('#cal [data-ev]').length }));
+    console.log(vista, 'reservas mes', JSON.stringify(cal));
+    if (!cal.mes || !cal.evs) problems.push(`${vista}: el calendario de reservas (mes) no pintó`);
+    await frame().evaluate(() => document.querySelector('#viewSw [data-view="week"]').click());
+    await new Promise((r) => setTimeout(r, 1500));
+    const sem = await frame().evaluate(() => ({ cols: document.querySelectorAll('#cal .wv .col').length, label: document.getElementById('rangeLabel').textContent }));
+    console.log(vista, 'reservas semana', JSON.stringify(sem));
+    if (sem.cols !== 7) problems.push(`${vista}: la vista de semana no pintó`);
+    await frame().evaluate(() => document.querySelector('#mainTabs [data-pane="comunicados"]').click());
+    await new Promise((r) => setTimeout(r, 1500));
+    console.log(vista, 'comunicados →', (await texto()).slice(0, 90));
     await page.close();
   }
 } finally { await browser.close(); }

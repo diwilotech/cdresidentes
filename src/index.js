@@ -77,8 +77,8 @@ async function handleCentral(req, env, ctx, url) {
 const SLUG = /^[a-z0-9][a-z0-9-]{0,48}$/;
 const aPanel = (url, slug, go) => Response.redirect(`${url.origin}/${slug}${go ? `?go=${encodeURIComponent(go)}` : ''}`, 302);
 // Páginas viejas del panel (/admin/<sección>) → página del módulo
-const PAGINA = { '': '/staff/', conjuntos: '/staff/conjuntos.html', unidades: '/staff/unidades.html', cartera: '/staff/cartera.html', solicitudes: '/staff/porteria.html', pqrs: '/staff/pqrs.html', reservas: '/staff/reservas.html',
-  mascotas: '/staff/mascotas.html', comunicados: '/staff/comunicados.html', asistente: '/staff/ai.html', ajustes: '/staff/ajustes.html' };
+const PAGINA = { '': '/staff/', conjuntos: '/staff/conjuntos.html', unidades: '/staff/unidades.html', cartera: '/staff/cartera.html', solicitudes: '/staff/porteria.html', pqrs: '/staff/pqrs.html', reservas: '/staff/porteria.html?tab=reservas',
+  mascotas: '/staff/mascotas.html', comunicados: '/staff/porteria.html?tab=comunicados', asistente: '/staff/ai.html', ajustes: '/staff/ajustes.html' };
 
 const assetAt = (env, req, path) => {
   const u = new URL(req.url);

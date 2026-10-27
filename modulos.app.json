@@ -109,12 +109,17 @@
       "depende_de": [],
       "tipo": "propio",
       "tablas": [
-        "requests"
+        "requests",
+        "amenities",
+        "bookings",
+        "notices"
       ],
       "mcp": {
-        "guia": "Portería: mudanzas, visitas, mantenimiento, domicilios y alarmas con aprobación y evidencias. La IA lista y resume lo pendiente por conjunto; aprobar o rechazar una solicitud pide confirmación.",
+        "guia": "Portería: solicitudes (mudanzas, visitas, mantenimiento, domicilios, alarmas), reservas de zonas comunes con calendario de mes y semana (varios días, color por estado) y comunicados a propietarios por WhatsApp y correo. La IA lista lo pendiente, consulta la ocupación y redacta circulares con el tono de la marca (lee antes la guía de marca); aprobar, rechazar, publicar o enviar pide confirmación.",
         "ejemplos": [
-          "Pídele: «¿Qué solicitudes de portería están pendientes hoy?»"
+          "Pídele: «¿Qué solicitudes de portería están pendientes hoy?»",
+          "Pídele: «¿Está libre el salón social el sábado?»",
+          "Pídele: «Redacta una circular sobre el corte de agua del jueves»"
         ],
         "flujos": []
       }
@@ -146,39 +151,12 @@
       }
     },
     {
-      "id": "reservas",
-      "nombre": "Reservas",
-      "icono": "bi-calendar2-week",
-      "menu": {
-        "ruta": "/staff/reservas.html",
-        "orden": 60
-      },
-      "permisos": {
-        "ver": "staff",
-        "configurar": "admin"
-      },
-      "widgets": [],
-      "depende_de": [],
-      "tipo": "propio",
-      "tablas": [
-        "amenities",
-        "bookings"
-      ],
-      "mcp": {
-        "guia": "Reservas de zonas comunes: tarifa por evento, hora o día, calendario, choque de horarios, aprobación y pago. La IA consulta la ocupación y las solicitudes; aprobar o rechazar una reserva pide confirmación.",
-        "ejemplos": [
-          "Pídele: «¿Está libre el salón social el sábado?»"
-        ],
-        "flujos": []
-      }
-    },
-    {
       "id": "mascotas",
       "nombre": "Mascotas",
       "icono": "bi-heart",
       "menu": {
         "ruta": "/staff/mascotas.html",
-        "orden": 70
+        "orden": 60
       },
       "permisos": {
         "ver": "staff",
@@ -194,32 +172,6 @@
         "guia": "Mascotas: censo con especie, raza (incluye las potencialmente peligrosas), vacunas, foto y carné. La IA consulta el censo y las vacunas vencidas.",
         "ejemplos": [
           "Pídele: «¿Qué mascotas tienen la vacuna vencida?»"
-        ],
-        "flujos": []
-      }
-    },
-    {
-      "id": "comunicados",
-      "nombre": "Comunicados",
-      "icono": "bi-megaphone",
-      "menu": {
-        "ruta": "/staff/comunicados.html",
-        "orden": 80
-      },
-      "permisos": {
-        "ver": "staff",
-        "configurar": "admin"
-      },
-      "widgets": [],
-      "depende_de": [],
-      "tipo": "propio",
-      "tablas": [
-        "notices"
-      ],
-      "mcp": {
-        "guia": "Comunicados: circulares con plantillas y redacción con IA; se envían a todos, solo propietarios o solo morosos por WhatsApp y correo. La IA redacta con el tono de la marca (lee antes la guía de marca); publicar o enviar pide confirmación.",
-        "ejemplos": [
-          "Pídele: «Redacta una circular sobre el corte de agua del jueves»"
         ],
         "flujos": []
       }

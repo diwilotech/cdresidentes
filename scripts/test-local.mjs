@@ -30,7 +30,7 @@ try {
   check('/<dirección>/admin/cartera (enlace viejo) lleva al panel con la página', (await app(`/${slug}/admin/cartera`)).headers.get('location')?.includes('go=%2Fstaff%2Fcartera.html'));
   check('/admin/ (enlace viejo) lleva al panel', (await app('/admin/')).headers.get('location')?.includes(`/${slug}`));
   check('Escritura sin encabezado de seguridad se rechaza (CSRF)', (await app('/api/admin/properties', { method: 'POST', body: { name: 'x' }, headers: { 'x-app': '', 'x-cdr': '' } })).status === 403);
-  for (const m of ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'reservas', 'mascotas', 'comunicados', 'ajustes', 'equipo', 'index']) {
+  for (const m of ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'mascotas', 'ajustes', 'equipo', 'index']) {
     const r = await app(`/staff/${m === 'index' ? '' : m}`, { headers: { 'sec-fetch-dest': 'iframe' } });
     check(`Página /staff/${m} sirve y trae el shell`, r.status === 200 && r.data.text?.includes('id="dw-shell"') && r.data.text.includes('/js/residentes.js'), String(r.status));
   }
@@ -51,6 +51,15 @@ try {
   const sol = await app('/api/admin/requests', { method: 'POST', body: { property_id: P.data.id, kind: 'visita', title: 'Visita técnica' } });
   const pq = await app('/api/admin/pqrs', { method: 'POST', body: { property_id: P.data.id, subject: 'Ruido en la noche', kind: 'queja' } });
   check('Crea solicitud de portería y PQRS', sol.status === 201 && pq.status === 201);
+  // --- Reservas (dentro de Portería): varios días, choques y consulta por semana ---
+  const Z = await app('/api/admin/amenities', { method: 'POST', body: { property_id: P.data.id, name: 'Salón social', fee: 100000, fee_unit: 'dia', capacity: 40 } });
+  const B1 = await app('/api/admin/bookings', { method: 'POST', body: { amenity_id: Z.data.id, date: '2031-03-10', end_date: '2031-03-12', start_time: '14:00', end_time: '10:00', status: 'approved' } });
+  check('Reserva de varios días (3 días x tarifa por día)', B1.status === 201);
+  const lista = await app('/api/admin/bookings?from=2031-03-11&to=2031-03-17');
+  check('La semana siguiente muestra la reserva que empezó antes', lista.data.items?.length === 1 && lista.data.items[0].amount === 300000 && lista.data.items[0].end_date === '2031-03-12');
+  check('Una reserva en medio de los días reservados choca (409)', (await app('/api/admin/bookings', { method: 'POST', body: { amenity_id: Z.data.id, date: '2031-03-11', start_time: '09:00', end_time: '12:00' } })).status === 409);
+  check('El último día, después de la hora de fin, sí se puede', (await app('/api/admin/bookings', { method: 'POST', body: { amenity_id: Z.data.id, date: '2031-03-12', start_time: '10:00', end_time: '12:00' } })).status === 201);
+  check('La fecha final antes de la inicial se rechaza', (await app('/api/admin/bookings', { method: 'POST', body: { amenity_id: Z.data.id, date: '2031-04-10', end_date: '2031-04-08', start_time: '09:00', end_time: '12:00' } })).status === 400);
   const pet = await app('/api/admin/pets', { method: 'POST', body: { unit_id: U.data.id, name: 'Rex', species: 'perro' } });
   check('Registra una mascota', pet.status === 201);
 
@@ -78,7 +87,7 @@ try {
   check('Módulo inactivo: no aparece en el menú', !(await app('/api/me')).data.modules.some((m) => m.id === 'cartera'));
   check('Los conjuntos se pueden listar aunque otros módulos estén apagados', (await app('/api/admin/properties')).status === 200);
   check('Módulo inactivo en A no afecta a B', (await B.app('/api/admin/charges')).status === 200);
-  await diwilo('PUT', `/businesses/${bid}/modules`, { modules: ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'reservas', 'mascotas', 'comunicados', 'ajustes'].map((modulo) => ({ modulo, activo: true })), version: 'h2' });
+  await diwilo('PUT', `/businesses/${bid}/modules`, { modules: ['conjuntos', 'unidades', 'cartera', 'porteria', 'pqrs', 'mascotas', 'ajustes'].map((modulo) => ({ modulo, activo: true })), version: 'h2' });
   check('Reactivado: los datos siguen ahí', (await app('/api/admin/charges')).status === 200);
 
   // --- Módulos centrales por el puente (Diwilo Modulos) ---

@@ -11,6 +11,7 @@ const R = (() => {
   const link = (path) => {
     const m = /^\/admin(?:\/([a-z]+))?\/?(\?.*)?$/.exec(path);
     if (!m) return path;
+    if (m[1] === 'reservas' || m[1] === 'comunicados') return `/staff/porteria.html?tab=${m[1]}`;
     return m[1] && PAGE[m[1]] ? `/staff/${PAGE[m[1]]}.html${m[2] || ''}` : `/staff/${m[2] || ''}`;
   };
   const go = (path) => { location.href = link(path); };

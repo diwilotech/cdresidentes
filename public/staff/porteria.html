@@ -18,16 +18,21 @@
 <body class="dw">
 <div id="dw-shell"></div>
 <main class="dw-main" data-titulo="Portería" data-modulo="porteria">
-  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-    <div>
-      <div class="eyebrow">Control operativo</div>
-      <h1 class="page-title">Solicitudes y portería</h1>
-      <p class="page-sub">Mudanzas programadas, visitas, mantenimiento, domicilios y alertas de seguridad, con aprobación de la administración.</p>
-    </div>
-    <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Nueva solicitud</button>
+  <div class="mb-3">
+    <div class="eyebrow">Control operativo</div>
+    <h1 class="page-title">Portería</h1>
+    <p class="page-sub">Solicitudes, reservas de zonas comunes y comunicados a los residentes, en un solo lugar.</p>
   </div>
 
-  <ul class="nav nav-pills mb-3 gap-1" id="tabs">
+  <ul class="nav nav-pills mb-3 gap-1" id="mainTabs">
+    <li class="nav-item"><button class="nav-link active" data-pane="solicitudes"><i class="bi bi-door-open me-1"></i>Solicitudes</button></li>
+    <li class="nav-item"><button class="nav-link" data-pane="reservas"><i class="bi bi-calendar2-week me-1"></i>Reservas</button></li>
+    <li class="nav-item"><button class="nav-link" data-pane="comunicados"><i class="bi bi-megaphone me-1"></i>Comunicados</button></li>
+  </ul>
+
+  <section id="pane-solicitudes">
+    <div class="d-flex justify-content-end mb-2"><button class="btn btn-primary" id="newReq"><i class="bi bi-plus-lg me-1"></i>Nueva solicitud</button></div>
+<ul class="nav nav-pills mb-3 gap-1" id="reqTabs">
     <li class="nav-item"><button class="nav-link active" data-status="">Todas</button></li>
     <li class="nav-item"><button class="nav-link" data-status="pending">Pendientes</button></li>
     <li class="nav-item"><button class="nav-link" data-status="approved">Aprobadas</button></li>
@@ -42,15 +47,101 @@
     <table class="table table-hover align-middle w-100" id="rows"></table>
   </div>
   
+
+  </section>
+
+  <section id="pane-reservas" class="d-none">
+    <div class="row g-3">
+      <div class="col-xl-9">
+        <div class="card mb-3">
+          <div class="card-header d-flex flex-wrap align-items-center gap-2">
+            <div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" id="prev" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button><button class="btn btn-outline-secondary" id="today">Hoy</button><button class="btn btn-outline-secondary" id="next" aria-label="Siguiente"><i class="bi bi-chevron-right"></i></button></div>
+            <span class="fw-bold text-capitalize flex-grow-1" id="rangeLabel"></span>
+            <div class="btn-group btn-group-sm" id="viewSw"><button class="btn btn-outline-primary" data-view="month">Mes</button><button class="btn btn-outline-primary" data-view="week">Semana</button></div>
+            <button class="btn btn-primary btn-sm" id="newBook"><i class="bi bi-calendar-plus me-1"></i>Nueva reserva</button>
+          </div>
+          <div class="card-body p-2 p-md-3">
+            <div class="cal-legend mb-2"><span><i class="lg st-pending"></i>Por aprobar</span><span><i class="lg st-approved"></i>Aprobada</span><span><i class="lg st-rejected"></i>Rechazada</span><span><i class="lg st-done"></i>Solicitud completada</span>
+              <label class="ms-auto form-check form-switch mb-0 small"><input class="form-check-input" type="checkbox" id="showReq"> <span class="form-check-label">Solicitudes de portería</span></label></div>
+            <div id="cal"></div>
+            <div class="small text-body-secondary mt-2"><i class="bi bi-hand-index me-1"></i>Arrastra sobre varios días del mes para reservar de corrido; en la semana toca una hora. La franja de color a la izquierda indica la zona (o el tipo de solicitud).</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="bi bi-list-check me-2 text-primary"></i>Reservas del periodo <span class="text-body-secondary fw-normal" id="count"></span></div>
+          <table class="table table-hover align-middle w-100" id="bookList"></table>
+        </div>
+      </div>
+      <div class="col-xl-3">
+        <div class="card mb-3"><div class="card-header"><i class="bi bi-hourglass-split me-2 text-warning"></i>Por aprobar</div><div class="list-group list-group-flush" id="pending"></div></div>
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-tags me-2 text-primary"></i>Zonas y tarifas</span>
+            <button class="btn btn-sm btn-outline-primary manager" id="newAmenity"><i class="bi bi-plus-lg"></i> Zona</button></div>
+          <div class="list-group list-group-flush" id="amenities"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pane-comunicados" class="d-none">
+<div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card" id="composer">
+        <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-pencil-square me-2 text-primary"></i><span id="formTitle">Escribir nueva circular</span></span>
+          <button class="btn btn-sm btn-link d-none" id="cancelEdit">Cancelar edición</button></div>
+        <div class="card-body">
+          <form id="form" novalidate>
+            <div class="mb-2"><label class="form-label small">Título del comunicado *</label><input name="title" class="form-control" required maxlength="160" placeholder="Ej. Programación de fumigación de áreas comunes"></div>
+            <div class="row g-2 mb-2">
+              <div class="col-sm-6"><label class="form-label small">Categoría</label>
+                <select name="category" class="form-select">
+                  <option value="mantenimiento">🛠️ Mantenimiento</option><option value="seguridad">🔒 Seguridad</option><option value="servicios">💧 Servicios</option>
+                  <option value="asamblea">📅 Asamblea / reuniones</option><option value="convivencia">🤝 Convivencia sana</option><option value="finanzas">💵 Finanzas / recaudos</option><option value="general">📌 General</option>
+                </select></div>
+              <div class="col-sm-6"><label class="form-label small">Para</label><select name="property_id" class="form-select" id="propSel"></select></div>
+            </div>
+            <div class="d-flex justify-content-between align-items-end mb-1"><label class="form-label small mb-0">Contenido *</label>
+              <button type="button" class="btn btn-sm btn-ai" id="aiBtn"><i class="bi bi-stars me-1"></i>Redactar con IA</button></div>
+            <textarea name="body" class="form-control mb-2" rows="9" required maxlength="8000" placeholder="Redacta el contenido principal que todos los residentes deben conocer de forma clara…"></textarea>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="finanzas">✍️ Plantilla finanzas</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="seguridad">✍️ Plantilla seguridad</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" data-tpl="asamblea">✍️ Plantilla asamblea</button>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-send me-1"></i>Publicar</button>
+              <button type="button" class="btn btn-outline-secondary" id="draftBtn">Guardar borrador</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="filters">
+          <select id="status" class="form-select"><option value="">Activos</option><option value="published">Publicados</option><option value="draft">Borradores</option><option value="archived">Archivados</option></select>
+        </div>
+        <table class="table table-hover align-middle w-100" id="list"></table>
+      </div>
+    </div>
+  </div>
+  
+
+  </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/js/app.js"></script>
 <script src="/js/crud.js"></script>
 <script src="/js/shell.js"></script>
 <script src="/js/residentes.js"></script>
+<script src="/js/pages/porteria-reservas.js"></script>
 <script>
-    (async () => {
-      if (!(await App.init('solicitudes', { title: 'Portería' }))) return;
+(async () => {
+  if (!(await App.init('porteria', { title: 'Portería' }))) return;
+  if (!App.canManage()) document.querySelectorAll('.manager').forEach((b) => b.classList.add('d-none'));
+  const mounted = {};
+  const mounters = {
+    solicitudes: async () => { await (async () => {
       const { esc, unitLabel } = App;
       const $ = (id) => document.getElementById(id);
       const KINDS = { mudanza: ['Mudanza', 'bi-truck'], visita: ['Visita', 'bi-person-badge'], mantenimiento: ['Mantenimiento', 'bi-tools'], domicilio: ['Domicilio / correspondencia', 'bi-box-seam'], alarma: ['Alarma / seguridad', 'bi-bell'], otro: ['Otro', 'bi-three-dots'] };
@@ -123,18 +214,172 @@
         }
       });
       App.onRowClick($('rows'), (id) => edit(items.find((x) => x.id === id)));
-      $('tabs').addEventListener('click', (ev) => {
+      $('reqTabs').addEventListener('click', (ev) => {
         const b = ev.target.closest('[data-status]');
         if (!b) return;
-        $('tabs').querySelectorAll('.nav-link').forEach((x) => x.classList.toggle('active', x === b));
+        $('reqTabs').querySelectorAll('.nav-link').forEach((x) => x.classList.toggle('active', x === b));
         status = b.dataset.status; load();
       });
       $('kind').addEventListener('change', load);
-      $('newBtn').addEventListener('click', () => edit(null));
+      $('newReq').addEventListener('click', () => edit(null));
       App.onProperty(load);
       load();
-    })();
-  
+      window.__edit = edit;
+    })(); return { editRequest: window.__edit }; },
+    reservas: async () => { window.PorteriaReservas({ editRequest: async (r) => { await show('solicitudes'); window.__edit(r); } }); },
+    comunicados: async () => { await (async () => {
+      const { esc } = App;
+      const $ = (id) => document.getElementById(id);
+      const form = $('form');
+      const CAT = { mantenimiento: '🛠️ Mantenimiento', seguridad: '🔒 Seguridad', servicios: '💧 Servicios', asamblea: '📅 Asamblea', convivencia: '🤝 Convivencia', finanzas: '💵 Finanzas', general: '📌 General' };
+      const ST = { draft: ['Borrador', 'secondary'], published: ['Publicado', 'success'], archived: ['Archivado', 'secondary'] };
+      const TPL = {
+        finanzas: ['Recordatorio de pago de cuota de administración', 'Estimados copropietarios:\n\nLes recordamos que la cuota de administración del mes vence el día 10. El pago oportuno nos permite mantener la seguridad, el aseo y el buen estado de nuestras zonas comunes, y evita intereses de mora.\n\nPuede pagar por PSE o consignación en la cuenta del conjunto. Si tiene saldos pendientes, comuníquese con la administración para acordar un plan de pagos.\n\nCordialmente,\nLa Administración'],
+        seguridad: ['Recomendaciones de seguridad', 'Estimados residentes:\n\nPara el bienestar de todos, recordamos:\n- Anunciar siempre a sus visitantes en portería.\n- No permitir el ingreso de personas desconocidas.\n- Reportar de inmediato cualquier situación sospechosa al personal de vigilancia.\n\nLa seguridad es responsabilidad de todos.\n\nLa Administración'],
+        asamblea: ['Convocatoria a asamblea general de copropietarios', 'Estimados copropietarios:\n\nDe acuerdo con la Ley 675 de 2001 y el reglamento de propiedad horizontal, se convoca a la Asamblea General Ordinaria que se realizará el día ____ a las ____ en ____.\n\nOrden del día:\n1. Verificación del quórum.\n2. Lectura y aprobación del orden del día.\n3. Informe de gestión de la administración.\n4. Estados financieros y presupuesto.\n5. Proposiciones y varios.\n\nSi no puede asistir, puede otorgar poder escrito a otra persona.\n\nLa Administración'],
+      };
+      let items = [];
+      let editing = null;
+      const fillProps = () => { $('propSel').innerHTML = App.propertyOptions(App.currentProperty(), { blank: 'Todos los conjuntos' }); };
+      fillProps();
+
+      const COLS = [
+        { title: 'Comunicado', value: (n) => n.title,
+          html: (n) => `<div class="fw-semibold">${esc(n.title)}</div><div class="small text-body-secondary text-truncate" style="max-width:26rem">${esc(n.body)}</div>` },
+        { title: 'Categoría', value: (n) => CAT[n.category] },
+        { title: 'Para', value: (n) => n.property_name || 'Todos los conjuntos' },
+        { title: 'Fecha', value: (n) => n.created_at, html: (n) => `<span class="text-nowrap small">${App.fmtDate(n.created_at)}</span>${n.author ? `<div class="small text-body-secondary">${esc(n.author)}</div>` : ''}` },
+        { title: 'WhatsApp', sum: true, money: false, value: (n) => n.sent_wa, html: (n) => `<i class="bi bi-whatsapp text-success me-1"></i>${n.sent_wa}` },
+        { title: 'Correos', sum: true, money: false, value: (n) => n.sent_email, html: (n) => `<i class="bi bi-envelope me-1"></i>${n.sent_email}` },
+        { title: 'Estado', value: (n) => ST[n.status][0], html: (n) => App.badge(ST[n.status][0], ST[n.status][1]) },
+        { title: 'Contenido', exportOnly: true, value: (n) => n.body },
+        { title: 'Acciones', noExport: true, orderable: false, className: 'text-end text-nowrap',
+          html: (n) => `${App.canManage() && n.status !== 'archived' ? `<button class="btn btn-sm btn-primary" data-send="${esc(n.id)}" title="Enviar a residentes"><i class="bi bi-send"></i></button>` : ''}
+            <button class="btn btn-sm btn-outline-secondary" data-edit="${esc(n.id)}" title="Editar"><i class="bi bi-pencil"></i></button>
+            ${n.status !== 'archived' ? `<button class="btn btn-sm btn-outline-secondary" data-archive="${esc(n.id)}" title="Archivar"><i class="bi bi-archive"></i></button>` : `<button class="btn btn-sm btn-outline-secondary" data-restore="${esc(n.id)}" title="Restaurar"><i class="bi bi-arrow-counterclockwise"></i></button>`}
+            <button class="btn btn-sm btn-outline-secondary" data-copy="${esc(n.id)}" title="Copiar texto"><i class="bi bi-copy"></i></button>` },
+      ];
+      async function load() {
+        let d;
+        try { d = await App.api('/notices' + App.qs({ status: $('status').value })); } catch (err) { return App.fail(err); }
+        items = d.items;
+        await App.dataTable($('list'), { columns: COLS, data: items, order: [[3, 'desc']], title: 'Comunicados' });
+      }
+
+      function resetForm() {
+        editing = null;
+        form.reset(); fillProps();
+        $('formTitle').textContent = 'Escribir nueva circular';
+        $('cancelEdit').classList.add('d-none');
+      }
+
+      async function save(status) {
+        if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
+        const d = { ...App.formData(form), status };
+        try {
+          if (editing) await App.api(`/notices/${editing}`, { method: 'PUT', body: d });
+          else {
+            const r = await App.api('/notices', { method: 'POST', body: d });
+            if (status === 'published' && App.canManage()) sendDialog({ id: r.id, title: d.title, property_id: d.property_id });
+          }
+          App.toast(status === 'draft' ? 'Borrador guardado' : 'Comunicado publicado');
+          form.classList.remove('was-validated');
+          resetForm(); load();
+        } catch (err) { App.fail(err); }
+      }
+
+      async function sendDialog(n) {
+        const counts = async (aud) => App.api(`/notices/${n.id}/recipients?audience=${aud}`);
+        const { el, form: f } = App.formDialog({
+          title: `Enviar · ${n.title}`, submit: 'Enviar ahora',
+          data: { audience: 'all', email: true, whatsapp: true },
+          fields: `
+            <label class="form-label small">Destinatarios</label>
+            <select name="audience" class="form-select mb-3"><option value="all">Propietarios y arrendatarios</option><option value="owners">Solo propietarios</option><option value="debtors">Solo unidades en mora</option></select>
+            <div class="form-check"><input class="form-check-input" type="checkbox" name="whatsapp" id="cWa"><label class="form-check-label" for="cWa"><i class="bi bi-whatsapp text-success me-1"></i>WhatsApp</label></div>
+            <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="email" id="cEm"><label class="form-check-label" for="cEm"><i class="bi bi-envelope me-1"></i>Correo (copia oculta)</label></div>
+            <div class="small text-body-secondary" id="rc">Calculando destinatarios…</div>`,
+          onSave: async (d) => {
+            const channels = [d.whatsapp && 'whatsapp', d.email && 'email'].filter(Boolean);
+            const r = await App.api(`/notices/${n.id}/send`, { method: 'POST', body: { channels, audience: d.audience } });
+            App.toast(`Enviado: ${r.sent.whatsapp} WhatsApp · ${r.sent.email} correos`);
+            load();
+          },
+        });
+        const refresh = async () => {
+          try { const c = await counts(f.elements.audience.value); el.querySelector('#rc').textContent = `${c.units} unidades · ${c.phones} celulares · ${c.emails} correos`; }
+          catch (err) { el.querySelector('#rc').textContent = err.message; }
+        };
+        f.elements.audience.addEventListener('change', refresh);
+        refresh();
+      }
+
+      $('list').addEventListener('click', async (ev) => {
+        const b = ev.target.closest('button');
+        if (!b) return;
+        const n = items.find((x) => x.id === (b.dataset.send || b.dataset.edit || b.dataset.archive || b.dataset.restore || b.dataset.copy));
+        try {
+          if (b.dataset.send) sendDialog(n);
+          if (b.dataset.edit) {
+            editing = n.id;
+            App.fillForm(form, { ...n, property_id: n.property_id || '' });
+            $('formTitle').textContent = 'Editar comunicado';
+            $('cancelEdit').classList.remove('d-none');
+            $('composer').scrollIntoView({ behavior: 'smooth' });
+          }
+          if (b.dataset.archive && (await App.confirmAction('¿Estás seguro de que deseas archivar este comunicado?'))) { await App.api(`/notices/${n.id}`, { method: 'PUT', body: { status: 'archived' } }); load(); }
+          if (b.dataset.restore) { await App.api(`/notices/${n.id}`, { method: 'PUT', body: { status: 'published' } }); load(); }
+          if (b.dataset.copy) { await navigator.clipboard.writeText(`${n.title}\n\n${n.body}`); App.toast('Texto copiado'); }
+        } catch (err) { App.fail(err); }
+      });
+
+      document.querySelectorAll('#pane-comunicados [data-tpl]').forEach((b) => b.addEventListener('click', () => {
+        const [t, body] = TPL[b.dataset.tpl];
+        form.elements.title.value = t; form.elements.body.value = body; form.elements.category.value = b.dataset.tpl;
+      }));
+      $('aiBtn').addEventListener('click', async () => {
+        const topic = form.elements.title.value.trim() || form.elements.body.value.trim();
+        if (!topic) return App.toast('Escribe el título o una idea del comunicado', 'warning');
+        const b = $('aiBtn');
+        b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Redactando…';
+        try {
+          const r = await App.api('/ai/draft', { method: 'POST', body: { kind: 'circular', topic: `${topic} (categoría ${form.elements.category.value})`, property_id: form.elements.property_id.value || undefined } });
+          const [first, ...rest] = r.text.split('\n');
+          if (!form.elements.title.value.trim()) form.elements.title.value = first.replace(/^[#*\s]+|[*]+$/g, '').slice(0, 160);
+          form.elements.body.value = (form.elements.title.value.trim() && rest.length ? rest.join('\n') : r.text).trim();
+        } catch (err) { App.fail(err); }
+        b.disabled = false; b.innerHTML = '<i class="bi bi-stars me-1"></i>Redactar con IA';
+      });
+      form.addEventListener('submit', (ev) => { ev.preventDefault(); save('published'); });
+      $('draftBtn').addEventListener('click', () => save('draft'));
+      $('cancelEdit').addEventListener('click', resetForm);
+      $('status').addEventListener('change', load);
+      App.onProperty(() => { if (!editing) fillProps(); load(); });
+
+      // Borrador que llega desde otras pantallas.
+      try {
+        const draft = sessionStorage.getItem('cdr_draft');
+        if (draft) {
+          sessionStorage.removeItem('cdr_draft');
+          const [first, ...rest] = draft.trim().split('\n');
+          form.elements.title.value = first.replace(/^[#*\s]+|[*:]+$/g, '').slice(0, 160);
+          form.elements.body.value = rest.join('\n').trim() || draft;
+        }
+      } catch { /* sin almacenamiento */ }
+      if (App.param('new')) form.elements.title.focus();
+      load();
+    })(); },
+  };
+  async function show(name) {
+    document.querySelectorAll('#mainTabs [data-pane]').forEach((b) => b.classList.toggle('active', b.dataset.pane === name));
+    ['solicitudes', 'reservas', 'comunicados'].forEach((p) => document.getElementById('pane-' + p).classList.toggle('d-none', p !== name));
+    if (!mounted[name]) { mounted[name] = true; await mounters[name](); }
+    history.replaceState(null, '', name === 'solicitudes' ? location.pathname : `${location.pathname}?tab=${name}`);
+  }
+  document.getElementById('mainTabs').addEventListener('click', (ev) => { const b = ev.target.closest('[data-pane]'); if (b) show(b.dataset.pane); });
+  const tab = App.param('tab');
+  show(['reservas', 'comunicados'].includes(tab) ? tab : App.param('new') ? 'comunicados' : 'solicitudes');
+})();
 </script>
 </body>
 </html>

@@ -59,7 +59,8 @@ export const mcp = (token, body) => fetch(`${APP}/mcp`, { method: 'POST', header
 // Negocio nuevo creado por Diwilo. Con { login: true } el propietario ya acepta la invitación y queda con sesión.
 export async function newBusiness(name, { login = false } = {}) {
   const mail = `${name.toLowerCase().replace(/\W/g, '')}${Date.now()}${Math.floor(Math.random() * 1000)}@ejemplo.com`;
-  const created = await diwilo('POST', '/businesses', { name, owner_email: mail, paid_until: null });
+  const created = await diwilo('POST', '/businesses', { name: `${name} ${Date.now().toString(36)}`, owner_email: mail, paid_until: null });
+  if (!created.data.invite_path) console.error('crear negocio falló', created.status, JSON.stringify(created.data).slice(0, 400));
   const token = new URLSearchParams(created.data.invite_path.split('#')[1]).get('invite');
   const app = client();
   if (login) await app('/api/admin/auth/invite', { method: 'POST', body: { token, password: 'clave-segura-1', name: 'Propietario' } });
