@@ -360,12 +360,21 @@ export function routes(r) {
     if (!propertyIds(c).includes(a.property_id)) throw new HttpError(404, 'Zona no encontrada');
     const ids = unitIds(c);
     const items = await tenantDb(c).all(
-      `SELECT date, start_time, end_time, status, (unit_id IN (${marks(ids)})) AS mine FROM bookings
-        WHERE business_id = ? AND amenity_id = ? AND substr(date, 1, 7) = ? AND status IN ('pending','approved')
+      `SELECT date, end_date, start_time, end_time, status, (unit_id IN (${marks(ids)})) AS mine FROM bookings
+        WHERE business_id = ? AND amenity_id = ? AND date <= ? AND COALESCE(NULLIF(end_date, ''), date) >= ? AND status IN ('pending','approved')
         ORDER BY date, start_time`,
-      ...ids, c.businessId, a.id, month,
+      ...ids, c.businessId, a.id, `${month}-31`, `${month}-01`,
     );
-    return json({ items, month });
+    // Una fila por día del mes (las reservas de varios días ocupan todos sus días).
+    const days = [];
+    for (const b of items) {
+      const last = b.end_date || b.date;
+      for (let d = new Date(`${b.date}T00:00:00Z`); d.toISOString().slice(0, 10) <= last; d.setUTCDate(d.getUTCDate() + 1)) {
+        const iso = d.toISOString().slice(0, 10);
+        if (iso.slice(0, 7) === month) days.push({ date: iso, start_time: iso === b.date ? b.start_time : '00:00', end_time: iso === last ? b.end_time : '23:59', status: b.status, mine: b.mine });
+      }
+    }
+    return json({ items: days, month });
   });
 
   r.get('/api/portal/bookings', 'resident', async (c) => {

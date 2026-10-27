@@ -52,7 +52,7 @@ async function sendWaMany(c, instance, phones, text) {
 }
 
 export function routes(r) {
-  r.get('/api/admin/notices', 'tenant:comunicados', async (c) => {
+  r.get('/api/admin/notices', 'tenant:porteria', async (c) => {
     const sp = c.url.searchParams;
     const [pf, pa] = propertyFilter(c, 'n.property_id');
     const [qf, qa] = searchFilter(c, ['n.title', 'n.body']);
@@ -71,30 +71,30 @@ export function routes(r) {
     return json({ items });
   });
 
-  r.post('/api/admin/notices', 'tenant:comunicados', async (c) => {
+  r.post('/api/admin/notices', 'tenant:porteria', async (c) => {
     const id = await insertRow(c, 'notices', { ...pick(await readJson(c.req), FIELDS), created_by: c.user.id });
     return json({ id }, 201);
   });
 
-  r.put('/api/admin/notices/:id', 'tenant:comunicados', async (c) => {
+  r.put('/api/admin/notices/:id', 'tenant:porteria', async (c) => {
     await updateRow(c, 'notices', c.params.id, pick(await readJson(c.req), FIELDS, { partial: true }));
     return json({ ok: true });
   });
 
-  r.delete('/api/admin/notices/:id', 'manager:comunicados', async (c) => {
+  r.delete('/api/admin/notices/:id', 'manager:porteria', async (c) => {
     await deleteRow(c, 'notices', c.params.id);
     return json({ ok: true });
   });
 
   // Cuántos destinatarios tendría un envío (para confirmar antes de enviar).
-  r.get('/api/admin/notices/:id/recipients', 'tenant:comunicados', async (c) => {
+  r.get('/api/admin/notices/:id/recipients', 'tenant:porteria', async (c) => {
     const n = await getRow(c, 'notices', c.params.id, 'Comunicado');
     const rc = await recipients(c, n.property_id, c.url.searchParams.get('audience') || 'all');
     return json({ units: rc.units, emails: rc.emails.length, phones: Math.min(rc.phones.length, MAX_WA) });
   });
 
   // Envía el comunicado. body: { channels: ['email','whatsapp'], audience: 'all'|'owners'|'debtors' }
-  r.post('/api/admin/notices/:id/send', 'manager:comunicados', async (c) => {
+  r.post('/api/admin/notices/:id/send', 'manager:porteria', async (c) => {
     const body = await readJson(c.req);
     const n = await getRow(c, 'notices', c.params.id, 'Comunicado');
     const channels = Array.isArray(body.channels) ? body.channels : [];
@@ -131,7 +131,7 @@ export function routes(r) {
 
   // Mensaje directo a una unidad (recordatorio de cobro, novedad…).
   // body: { channel: 'whatsapp'|'email', to: 'owner'|'tenant', text, subject? }
-  r.post('/api/admin/units/:id/message', 'tenant:comunicados', async (c) => {
+  r.post('/api/admin/units/:id/message', 'tenant:porteria', async (c) => {
     const body = await readJson(c.req);
     const u = await getRow(c, 'units', c.params.id, 'Unidad');
     const channel = oneOf(body.channel, ['whatsapp', 'email'], { label: 'Canal', fallback: 'whatsapp' });

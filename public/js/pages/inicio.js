@@ -84,13 +84,13 @@
               <div class="list-group list-group-flush">${d.pending.length ? d.pending.map((r) => `
                 <a class="list-group-item list-group-item-action small" href="/staff/porteria.html"><i class="bi ${REQ_ICON[r.kind] || 'bi-dot'} me-2"></i>${esc(r.title)}
                   <span class="text-body-secondary">${r.number ? ' · ' + esc(unitLabel(r)) : ''}${r.scheduled_at ? ' · ' + App.fmtDateTime(r.scheduled_at) : ''}</span></a>`).join('') : empty('Nada pendiente')}</div></div>
-            <div class="card mb-3"><div class="card-header d-flex justify-content-between"><span><i class="bi bi-calendar2-week me-2 text-primary"></i>Próximas reservas</span><a href="/staff/reservas.html" class="small">Ver</a></div>
+            <div class="card mb-3"><div class="card-header d-flex justify-content-between"><span><i class="bi bi-calendar2-week me-2 text-primary"></i>Próximas reservas</span><a href="/staff/porteria.html?tab=reservas" class="small">Ver</a></div>
               <div class="list-group list-group-flush">${d.bookings.length ? d.bookings.map((b) => `
                 <div class="list-group-item small"><span class="fw-semibold">${esc(b.amenity)}</span> · ${App.fmtDate(b.date, { weekday: true })} ${esc(b.start_time)}–${esc(b.end_time)}
                   <span class="text-body-secondary">${b.number ? ' · ' + esc(unitLabel(b)) : b.holder ? ' · ' + esc(b.holder) : ''}</span>${b.status === 'pending' ? ' ' + App.badge('Por aprobar', 'warning') : ''}</div>`).join('') : empty('Sin reservas próximas')}</div></div>
-            <div class="card"><div class="card-header d-flex justify-content-between"><span><i class="bi bi-megaphone me-2 text-primary"></i>Comunicados recientes</span><a href="/staff/comunicados.html" class="small">Ver todos</a></div>
+            <div class="card"><div class="card-header d-flex justify-content-between"><span><i class="bi bi-megaphone me-2 text-primary"></i>Comunicados recientes</span><a href="/staff/porteria.html?tab=comunicados" class="small">Ver todos</a></div>
               <div class="list-group list-group-flush">${d.notices.length ? d.notices.map((n) => `
-                <a class="list-group-item list-group-item-action small" href="/staff/comunicados.html"><div class="fw-semibold">${esc(n.title)}</div>
+                <a class="list-group-item list-group-item-action small" href="/staff/porteria.html?tab=comunicados"><div class="fw-semibold">${esc(n.title)}</div>
                   <div class="text-body-secondary">${esc(n.category)} · ${App.fmtDate(n.created_at)}</div></a>`).join('') : empty('Sin comunicados')}</div></div>
           </div>
         </div>`;
