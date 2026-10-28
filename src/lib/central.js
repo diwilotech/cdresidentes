@@ -59,9 +59,17 @@ export async function propiasDe(c) {
 }
 
 // API de un módulo central. Ya pasó authenticate(c, 'tenant:<modulo>') en src/index.js.
+// Personas del equipo del negocio con acceso a la app (titular, administradores y personal)
+async function equipoDe(c) {
+  try {
+    const rows = (await c.env.DB.prepare(`SELECT u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.business_id = ? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.email`).bind(c.businessId).all()).results || [];
+    return rows.map((r) => ({ email: String(r.email || '').toLowerCase(), nombre: r.name || null, rol: r.role }));
+  } catch (e) { console.error('equipo', e.message); return []; }
+}
 export async function centralApi(c) {
   const body = c.req.method === 'GET' || c.req.method === 'HEAD' ? null : await c.req.text();
   const ctx = await ctxOf(c);
+  if (c.url.pathname.startsWith('/api/whatsapp/admins')) ctx.equipo = await equipoDe(c);   // las personas con acceso: Mensajes → Administrador las usa para activar el modo administrador por WhatsApp
   if (c.url.pathname.startsWith('/api/ai/')) ctx.propias = await propiasDe(c);   // el asistente y los agentes usan también las herramientas propias de la app
   const r = await need(c.env).call(ctx, { method: c.req.method, path: c.url.pathname, query: c.url.search, body });
   await saveAudit(c, r.audit);
