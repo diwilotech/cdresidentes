@@ -35,6 +35,13 @@
     elegir: (id) => { App.setProperty(id || ''); App.refreshPropertySelects(); },
   };
 
+  // ---- números de la figura «Así funciona tu negocio» (el Dashboard la pinta; aquí solo se entregan los valores propios del conjunto) ----
+  window.DwInicioValores = async () => {
+    await ready;
+    const d = await App.api('/dashboard' + App.qs());
+    return { unidades: App.fmtNum(d.units, 0), pqrs: d.pqrs.open, porteria: d.requests.visitsToday, cartera: moneyShort(d.cartera.overdue) };
+  };
+
   // ---- indicadores del conjunto activo ----
   (window.DwDashboard = window.DwDashboard || []).push({
     id: 'conjunto',
