@@ -71,6 +71,9 @@ export async function centralApi(c) {
   const ctx = await ctxOf(c);
   if (c.url.pathname.startsWith('/api/whatsapp/admins')) ctx.equipo = await equipoDe(c);   // las personas con acceso: Mensajes → Administrador las usa para activar el modo administrador por WhatsApp
   if (c.url.pathname.startsWith('/api/ai/')) ctx.propias = await propiasDe(c);   // el asistente y los agentes usan también las herramientas propias de la app
+  // Foto, video, audio o documento de un chat de Mensajes: llega como Response (con Range para audio y video)
+  const med = c.req.method === 'GET' ? /^\/api\/whatsapp\/media\/(\d{1,12})$/.exec(c.url.pathname) : null;
+  if (med) { const rm = await need(c.env).media(ctx, med[1], c.req.headers.get('range')); return new Response(rm.body, { status: rm.status, headers: rm.headers }); }
   const r = await need(c.env).call(ctx, { method: c.req.method, path: c.url.pathname, query: c.url.search, body });
   await saveAudit(c, r.audit);
   return new Response(r.body, { status: r.status, headers: r.headers });
