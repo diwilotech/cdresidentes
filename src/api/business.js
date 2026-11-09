@@ -5,6 +5,7 @@ import { sendWhatsApp } from '../integrations/whatsapp.js';
 import { sendMail } from '../integrations/email.js';
 import { createInvite, invitePath } from '../lib/auth.js';
 import { brandUrl, readImage } from './files.js';
+import { assignableModules, parseModulos, moduleAllowed } from '../lib/modules.js';
 
 // El propietario es único y lo asigna Diwilo Web al crear el negocio: desde el panel solo se agregan administradores y equipo.
 const ROLES = ['admin', 'staff'];
@@ -66,14 +67,37 @@ export function routes(r) {
 
   // ---------- equipo ----------
 
+  // Lista de ids de módulos que se pueden asignar (solo válidos) en JSON, o error.
+  const modulosDe = async (c, raw) => {
+    if (!Array.isArray(raw)) throw new HttpError(400, 'Módulos no válidos');
+    const ok = new Set((await assignableModules(c.env)).map((m) => m.id));
+    return JSON.stringify([...new Set(raw.map(String))].filter((id) => ok.has(id)));
+  };
+
   r.get('/api/admin/team', 'tenant', async (c) => {
-    const items = await tenantDb(c).all(
-      `SELECT u.id, u.email, u.name, m.role, m.created_at, (u.pin_hash IS NOT NULL) AS has_password
+    const rows = await tenantDb(c).all(
+      `SELECT u.id, u.email, u.name, m.role, m.modulos, m.created_at, (u.pin_hash IS NOT NULL) AS has_password
          FROM memberships m JOIN users u ON u.id = m.user_id
         WHERE m.business_id = ? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.name, u.email`,
       c.businessId,
     );
-    return json({ items, canManage: ['owner', 'admin'].includes(c.role), me: c.user.id });
+    const catalogo = (await assignableModules(c.env)).map((m) => ({ id: m.id, nombre: m.nombre, defecto: moduleAllowed('staff', null, m.id) }));
+    // Del equipo (rol staff) se devuelve la lista efectiva de módulos que puede abrir; administradores y propietario ven todo.
+    const items = rows.map(({ modulos, ...u }) => ({ ...u, modulos: u.role === 'staff' ? catalogo.map((m) => m.id).filter((id) => moduleAllowed('staff', parseModulos(modulos), id)) : null }));
+    return json({ items, catalogo, canManage: ['owner', 'admin'].includes(c.role), me: c.user.id });
+  });
+
+  r.patch('/api/admin/team/:userId', 'manager', async (c) => {
+    const db = tenantDb(c), body = await readJson(c.req);
+    const target = await db.first('SELECT role FROM memberships WHERE business_id = ? AND user_id = ?', c.businessId, c.params.userId);
+    if (!target) throw new HttpError(404, 'Miembro no encontrado');
+    if (target.role === 'owner') throw new HttpError(403, 'El propietario solo se cambia desde Diwilo');
+    if (body.role !== undefined) {
+      if (c.params.userId === c.user.id) throw new HttpError(400, 'No puedes cambiar tu propio rol');
+      await db.run('UPDATE memberships SET role = ? WHERE business_id = ? AND user_id = ?', oneOf(body.role, ROLES, { label: 'Rol' }), c.businessId, c.params.userId);
+    }
+    if (body.modulos !== undefined) await db.run('UPDATE memberships SET modulos = ? WHERE business_id = ? AND user_id = ?', await modulosDe(c, body.modulos), c.businessId, c.params.userId);
+    return json({ ok: true });
   });
 
   r.post('/api/admin/team', 'manager', async (c) => {
@@ -90,10 +114,11 @@ export function routes(r) {
     }
     const current = await tenantDb(c).first('SELECT role FROM memberships WHERE business_id = ? AND user_id = ?', c.businessId, user.id);
     if (current?.role === 'owner') throw new HttpError(403, 'El propietario no cambia de rol desde el panel');
+    const modulos = Array.isArray(body.modulos) && role === 'staff' ? await modulosDe(c, body.modulos) : null;
     await tenantDb(c).run(
-      `INSERT INTO memberships (user_id, business_id, role) VALUES (?, ?, ?)
-       ON CONFLICT (user_id, business_id) DO UPDATE SET role = excluded.role`,
-      user.id, c.businessId, role,
+      `INSERT INTO memberships (user_id, business_id, role, modulos) VALUES (?, ?, ?, ?)
+       ON CONFLICT (user_id, business_id) DO UPDATE SET role = excluded.role, modulos = excluded.modulos`,
+      user.id, c.businessId, role, modulos,
     );
     // Quien aún no tiene contraseña recibe un link para crearla.
     const inviteUrl = user.pin_hash ? null : c.url.origin + invitePath(await createInvite(c.env, user.id));

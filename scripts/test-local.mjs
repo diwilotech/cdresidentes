@@ -136,6 +136,14 @@ try {
   const rq = await app('/api/admin/requests', { method: 'POST', body: { property_id: P.data.id, unit_id: U.data.id, kind: 'mudanza', title: 'Mudanza de entrada' } });
   const rm = await app(`/api/admin/requests/${rq.data.id}`, { method: 'PUT', body: { status: 'approved' } });
   check('Mover una solicitud de portería (tablero) cambia solo su estado', rq.status === 201 && rm.status === 200 && (await app('/api/admin/requests?status=approved')).data.items?.some((x) => x.id === rq.data.id));
+  const eq = await app('/api/admin/team', { method: 'POST', body: { email: 'porteria-prueba@example.com', name: 'Portería', role: 'staff', modulos: ['porteria'] } });
+  const eqL = (await app('/api/admin/team')).data;
+  const pp = eqL.items?.find((u) => u.email === 'porteria-prueba@example.com');
+  check('Equipo: el personal se crea con módulos elegidos', eq.status === 201 && eqL.catalogo?.length > 0 && pp?.modulos?.includes('porteria') && !pp.modulos.includes('cartera'));
+  const eq2 = await app(`/api/admin/team/${eq.data.userId}`, { method: 'PATCH', body: { modulos: ['pqrs', 'cartera'] } });
+  const pp2 = (await app('/api/admin/team')).data.items.find((u) => u.email === 'porteria-prueba@example.com');
+  check('Equipo: se cambian los módulos de una persona', eq2.status === 200 && pp2.modulos.includes('cartera') && !pp2.modulos.includes('porteria'));
+  await app(`/api/admin/team/${eq.data.userId}`, { method: 'DELETE' });
   const portal = await client()(`/api/public/portal/login`, { method: 'POST', body: { unit_id: U.id, doc: '1020304050' } });
   check('El portal responde (con o sin ese contrato) sin romperse', portal.status < 500, String(portal.status));
 } catch (e) {

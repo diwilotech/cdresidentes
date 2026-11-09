@@ -103,6 +103,7 @@
 <script src="/js/app.js"></script>
 <script src="/js/crud.js"></script>
 <script src="/js/shell.js"></script>
+<script src="/m/dwviz.js"></script>
 <script src="/js/residentes.js"></script>
 <script src="/admin/assets/cuenta-cobro.js"></script>
 <script>
@@ -136,7 +137,8 @@
         for (let i = 11; i >= 0; i--) { const d = new Date(today.slice(0, 7) + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - i); months.push(d.toISOString().slice(0, 7)); }
         const by = Object.fromEntries(s.monthly.map((m) => [m.month, m.collected]));
         const max = Math.max(1, ...months.map((m) => by[m] || 0));
-        $('bars').innerHTML = months.map((m) => `<div class="b" title="${App.fmtMonth(m)}: ${money(by[m] || 0)}"><i style="height:${Math.round(((by[m] || 0) / max) * 100)}%"></i><span>${App.MESES_LARGOS[+m.slice(5) - 1].slice(0, 3)}</span></div>`).join('');
+        if (window.DwViz) window.DwViz.barras($('bars'), { etiquetas: months.map((m) => App.MESES_LARGOS[+m.slice(5) - 1].slice(0, 3)), series: [{ nombre: 'Recaudado', datos: months.map((m) => by[m] || 0) }], fmt: (v) => money(v) });
+        else $('bars').innerHTML = months.map((m) => `<div class="b" title="${App.fmtMonth(m)}: ${money(by[m] || 0)}"><i style="height:${Math.round(((by[m] || 0) / max) * 100)}%"></i><span>${App.MESES_LARGOS[+m.slice(5) - 1].slice(0, 3)}</span></div>`).join('');
         const ag = Object.fromEntries(s.aging.map((a) => [a.bucket, a]));
         const tot = s.aging.reduce((x, a) => x + a.amount, 0) || 1;
         const color = { '0-30': '#D97706', '31-60': '#EA580C', '61-90': '#DC2626', '90+': '#7F1D1D' };
