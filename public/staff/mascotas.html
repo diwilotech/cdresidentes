@@ -28,6 +28,7 @@
     <button class="btn btn-primary" id="newBtn"><i class="bi bi-plus-lg me-1"></i>Registrar mascota</button>
   </div>
   <div class="row g-3 mb-3" id="kpis"></div>
+  <div class="dv-g" id="graf"></div>
   <div class="card">
     <table class="table table-hover align-middle w-100" id="list"></table>
   </div>
@@ -38,6 +39,7 @@
 <script src="/js/crud.js"></script>
 <script src="/js/shell.js"></script>
 <script src="/js/residentes.js"></script>
+<script src="/m/dwviz.js"></script>
 <script>
     (async () => {
       if (!(await App.init('mascotas'))) return;
@@ -70,6 +72,15 @@
         const k = (l, v, cls = '') => `<div class="col-6 col-md-3"><div class="stat-strip ${cls}"><div class="lbl">${l}</div><div class="val fs-5">${v}</div></div></div>`;
         $('kpis').innerHTML = k('Perros', items.filter((p) => p.species === 'perro').length) + k('Gatos', items.filter((p) => p.species === 'gato').length) +
           k('Vacunas vencidas', unvax, unvax ? 'red' : '') + k('Potencialmente peligrosos', items.filter((p) => p.potentially_dangerous).length, 'violet');
+        const V = window.DwViz;
+        if (V && items.length) {
+          const sinFecha = items.filter((p) => !p.vaccinated_until).length, vencidas = unvax - sinFecha;
+          $('graf').innerHTML = `<div id="gEsp"></div><div id="gVac"></div>`;
+          $('gEsp').innerHTML = V.tarjeta('Por especie', '<div data-in></div>', { sub: 'Censo del conjunto' });
+          V.dona($('gEsp').querySelector('[data-in]'), Object.entries(SP).map(([k, [n]]) => ({ nombre: n, valor: items.filter((p) => p.species === k).length })), { fmt: (n) => String(n), centro: 'Mascotas' });
+          $('gVac').innerHTML = V.tarjeta('Vacunación', '<div data-in></div>', { sub: unvax ? 'Pídeles el carné a quienes están vencidos' : 'Todas al día' });
+          V.dona($('gVac').querySelector('[data-in]'), [{ nombre: 'Al día', valor: items.length - unvax, color: '#34D399' }, { nombre: 'Vencidas', valor: vencidas, color: '#FB7185' }, { nombre: 'Sin fecha', valor: sinFecha, color: '#FBBF24' }], { fmt: (n) => String(n), centro: 'Vacunas' });
+        } else $('graf').innerHTML = '';
         await App.dataTable($('list'), { columns: COLS, data: items, title: 'Censo de mascotas' });
       }
 

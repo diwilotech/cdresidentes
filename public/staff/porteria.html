@@ -31,7 +31,7 @@
   </ul>
 
   <section id="pane-solicitudes">
-    <div class="d-flex justify-content-end mb-2"><button class="btn btn-primary" id="newReq"><i class="bi bi-plus-lg me-1"></i>Nueva solicitud</button></div>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2"><div class="d-flex align-items-center gap-2"><div class="btn-group btn-group-sm" role="group" aria-label="Vista"><button type="button" class="btn btn-outline-primary active" data-rvista="lista"><i class="bi bi-list-ul me-1"></i>Lista</button><button type="button" class="btn btn-outline-primary" data-rvista="tablero"><i class="bi bi-kanban me-1"></i>Tablero</button></div><span class="small text-body-secondary" id="rAyuda" hidden>Arrastra cada solicitud a su estado.</span></div><button class="btn btn-primary" id="newReq"><i class="bi bi-plus-lg me-1"></i>Nueva solicitud</button></div>
 <ul class="nav nav-pills mb-3 gap-1" id="reqTabs">
     <li class="nav-item"><button class="nav-link active" data-status="">Todas</button></li>
     <li class="nav-item"><button class="nav-link" data-status="pending">Pendientes</button></li>
@@ -40,7 +40,9 @@
     <li class="nav-item"><button class="nav-link" data-status="rejected">Rechazadas</button></li>
   </ul>
 
-  <div class="card">
+  <div id="reqTablero" hidden></div>
+
+  <div class="card" id="reqLista">
     <div class="filters">
       <select id="kind" class="form-select"><option value="">Tipo: todos</option></select>
     </div>
@@ -135,6 +137,7 @@
 <script src="/js/shell.js"></script>
 <script src="/js/residentes.js"></script>
 <script src="/js/pages/porteria-reservas.js"></script>
+<script src="/m/dwviz.js"></script>
 <script>
 (async () => {
   if (!(await App.init('porteria', { title: 'Portería' }))) return;
@@ -168,10 +171,30 @@
       ];
       async function load() {
         let d;
-        try { d = await App.api('/requests' + App.qs({ status, kind: $('kind').value })); } catch (err) { return App.fail(err); }
+        try { d = await App.api('/requests' + App.qs({ status: rvista === 'tablero' ? '' : status, kind: $('kind').value })); } catch (err) { return App.fail(err); }
         items = d.items;
         await App.dataTable($('rows'), { columns: COLS, data: items, title: 'Solicitudes de portería' });
+        pintaReq();
       }
+
+      // Tablero: pendientes, aprobadas, completadas y rechazadas; arrastrar una solicitud cambia su estado
+      let rvista = 'lista';
+      function pintaReq() {
+        const V = window.DwViz; if (!V || rvista !== 'tablero') return;
+        const host = $('reqTablero');
+        if (!items.length) { V.vacio(host, { icono: 'bi-door-open', titulo: 'No hay solicitudes', texto: 'Mudanzas, visitas, mantenimiento y domicilios aparecerán aquí por estado.' }); return; }
+        const COL = [['pending', 'Pendientes', '#FBBF24'], ['approved', 'Aprobadas', '#60A5FA'], ['done', 'Completadas', '#34D399'], ['rejected', 'Rechazadas', '#FB7185']];
+        V.kanban(host, { columnas: COL.map(([id, titulo, color]) => ({ id, titulo, color, items: items.filter((r) => r.status === id).map((r) => ({ id: r.id, titulo: r.title, detalle: `${KINDS[r.kind][0]} · ${r.number ? unitLabel(r) : r.property_name}`, etiqueta: r.scheduled_at ? App.fmtDateTime(r.scheduled_at) : '' })) })),
+          abrir: (id) => edit(items.find((x) => x.id === id)),
+          mover: async (id, de, a) => { try { await App.api(`/requests/${id}`, { method: 'PUT', body: { status: a } }); App.toast(`Pasó a ${ST[a][0].toLowerCase()}`); load(); } catch (err) { App.fail(err); load(); } } });
+      }
+      document.querySelectorAll('[data-rvista]').forEach((b) => b.addEventListener('click', () => {
+        rvista = b.dataset.rvista;
+        document.querySelectorAll('[data-rvista]').forEach((x) => x.classList.toggle('active', x === b));
+        const t = rvista === 'tablero';
+        $('reqTablero').hidden = !t; $('reqLista').hidden = t; $('reqTabs').hidden = t; $('rAyuda').hidden = !t;
+        load();
+      }));
 
       async function edit(r) {
         if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');

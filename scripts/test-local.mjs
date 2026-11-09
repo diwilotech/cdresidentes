@@ -133,6 +133,9 @@ try {
   check('La unidad trae su historia (mora y PQRS) en un solo hilo', q1.status === 201 && det.status === 200 && det.data.historia?.some((h) => h.titulo.startsWith('Mora')) && det.data.historia?.some((h) => h.titulo.startsWith('PQRS')), JSON.stringify(det.data.historia || det.data).slice(0, 200));
   const mv = await app(`/api/admin/pqrs/${q1.data.id}`, { method: 'PUT', body: { status: 'in_progress' } });
   check('Mover una PQRS de estado (tablero) solo cambia el estado', mv.status === 200 && (await app('/api/admin/pqrs?status=in_progress')).data.items?.some((x) => x.id === q1.data.id));
+  const rq = await app('/api/admin/requests', { method: 'POST', body: { property_id: P.data.id, unit_id: U.data.id, kind: 'mudanza', title: 'Mudanza de entrada' } });
+  const rm = await app(`/api/admin/requests/${rq.data.id}`, { method: 'PUT', body: { status: 'approved' } });
+  check('Mover una solicitud de portería (tablero) cambia solo su estado', rq.status === 201 && rm.status === 200 && (await app('/api/admin/requests?status=approved')).data.items?.some((x) => x.id === rq.data.id));
   const portal = await client()(`/api/public/portal/login`, { method: 'POST', body: { unit_id: U.id, doc: '1020304050' } });
   check('El portal responde (con o sin ese contrato) sin romperse', portal.status < 500, String(portal.status));
 } catch (e) {
