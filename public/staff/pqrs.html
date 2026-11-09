@@ -31,8 +31,10 @@
   </div>
 
   <div class="row g-3 mb-3" id="kpis"></div>
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3"><div class="btn-group btn-group-sm" role="group" aria-label="Vista"><button type="button" class="btn btn-outline-primary active" data-vista="lista"><i class="bi bi-list-ul me-1"></i>Lista</button><button type="button" class="btn btn-outline-primary" data-vista="tablero"><i class="bi bi-kanban me-1"></i>Tablero</button></div><span class="small text-body-secondary" id="vistaAyuda" hidden>Arrastra cada PQRS a su estado.</span></div>
+  <div id="tablero" hidden><div class="dv-g"><div id="kbGraf"></div><div id="kbCat"></div></div><div id="kb"></div></div>
 
-  <div class="card">
+  <div class="card" id="listaCard">
     <div class="filters">
       <select id="status" class="form-select"><option value="">Estado: todos</option><option value="open">Abiertas</option><option value="in_progress">En gestión</option><option value="closed">Cerradas</option></select>
       <select id="category" class="form-select"><option value="">Categoría: todas</option></select>
@@ -46,6 +48,7 @@
 <script src="/js/crud.js"></script>
 <script src="/js/shell.js"></script>
 <script src="/js/residentes.js"></script>
+<script src="/m/dwviz.js"></script>
 <script>
     (async () => {
       if (!(await App.init('pqrs'))) return;
@@ -84,7 +87,35 @@
         $('kpis').innerHTML = k('PQRS abiertas', d.stats.open, 'red') + k('Tiempo prom. respuesta', d.stats.avg_hours != null ? `${App.fmtNum(d.stats.avg_hours)} h` : '—') +
           k('Categoría más frecuente', top ? `${CAT[top[0]]} (${top[1]})` : '—', 'violet') + k('Urgentes', items.filter((q) => q.priority === 'alta' && q.status !== 'closed').length, 'red');
         await App.dataTable($('rows'), { columns: COLS, data: items, title: 'PQRS' });
+        pintaTablero();
       }
+
+      // Tablero: las PQRS por estado (arrastrar cambia el estado), con las abiertas por categoría y las cerradas por semana
+      let vista = 'lista';
+      function pintaTablero() {
+        const V = window.DwViz; if (!V || vista !== 'tablero') return;
+        if (!items.length) { V.vacio($('kb'), { icono: 'bi-chat-square-text', titulo: 'No hay PQRS con estos filtros', texto: 'Cuando un residente radique una, aparecerá aquí por estado.' }); $('kbGraf').innerHTML = ''; $('kbCat').innerHTML = ''; return; }
+        const abiertas = items.filter((q) => q.status !== 'closed'), porCat = {};
+        abiertas.forEach((q) => (porCat[q.category] = (porCat[q.category] || 0) + 1));
+        $('kbGraf').innerHTML = V.tarjeta('Abiertas por categoría', '<div data-in></div>', { sub: 'Dónde se concentran los problemas' });
+        V.dona($('kbGraf').querySelector('[data-in]'), Object.entries(porCat).map(([k, n]) => ({ nombre: CAT[k] || k, valor: n })), { fmt: (n) => String(n), centro: 'Abiertas' });
+        const cerradas = items.filter((q) => q.closed_at), sem = {};
+        cerradas.forEach((q) => { const d = new Date(String(q.closed_at).replace(' ', 'T') + 'Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); const k = d.toISOString().slice(0, 10); sem[k] = (sem[k] || 0) + 1; });
+        const ks = Object.keys(sem).sort().slice(-8);
+        $('kbCat').innerHTML = V.tarjeta('Cerradas por semana', '<div data-in></div>', { sub: 'Cuántas resuelves' });
+        if (ks.length) V.barras($('kbCat').querySelector('[data-in]'), { etiquetas: ks.map((k) => k.slice(5)), series: [{ nombre: 'Cerradas', datos: ks.map((k) => sem[k]), color: '#34D399' }], fmt: (n) => String(n) });
+        else V.vacio($('kbCat').querySelector('[data-in]'), { icono: 'bi-check2-circle', titulo: 'Aún sin cierres', texto: 'Cuando cierres PQRS verás tu ritmo.' });
+        const COL = [['open', 'Abiertas', '#FBBF24'], ['in_progress', 'En gestión', '#60A5FA'], ['closed', 'Cerradas', '#34D399']];
+        V.kanban($('kb'), { columnas: COL.map(([id, titulo, color]) => ({ id, titulo, color, items: items.filter((q) => q.status === id).map((q) => ({ id: q.id, titulo: q.subject, detalle: `${KIND[q.kind]} · ${q.number ? unitLabel(q) : q.property_name}`, etiqueta: `${CAT[q.category]}${q.priority === 'alta' ? ' · urgente' : ''}` })) })),
+          abrir: (id) => edit(items.find((x) => x.id === id)),
+          mover: async (id, de, a) => { try { await App.api(`/pqrs/${id}`, { method: 'PUT', body: { status: a } }); App.toast(`Pasó a ${ST[a][0].toLowerCase()}`); load(); } catch (err) { App.fail(err); load(); } } });
+      }
+      document.querySelectorAll('[data-vista]').forEach((b) => b.addEventListener('click', () => {
+        vista = b.dataset.vista;
+        document.querySelectorAll('[data-vista]').forEach((x) => x.classList.toggle('active', x === b));
+        $('tablero').hidden = vista !== 'tablero'; $('listaCard').hidden = vista === 'tablero'; $('vistaAyuda').hidden = vista !== 'tablero';
+        pintaTablero();
+      }));
 
       function edit(q) {
         if (!App.properties.length) return App.toast('Primero crea un conjunto', 'warning');

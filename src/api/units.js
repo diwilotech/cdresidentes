@@ -68,16 +68,29 @@ export function routes(r) {
     const db = tenantDb(c);
     const unit = await db.first(`${UNIT_DEBT_SQL} WHERE u.business_id = ? AND u.id = ?`, c.businessId, c.params.id);
     if (!unit) throw new HttpError(404, 'Unidad no encontrada');
-    const [charges, pets] = await Promise.all([
+    const [charges, pets, pqrs, solicitudes, reservas] = await Promise.all([
       db.all('SELECT * FROM charges WHERE business_id = ? AND unit_id = ? ORDER BY paid_at IS NOT NULL, due_date DESC LIMIT 200', c.businessId, c.params.id),
       db.all('SELECT * FROM pets WHERE business_id = ? AND unit_id = ? ORDER BY name', c.businessId, c.params.id),
+      db.all('SELECT id, kind, subject, status, priority, created_at, closed_at FROM pqrs WHERE business_id = ? AND unit_id = ? ORDER BY created_at DESC LIMIT 20', c.businessId, c.params.id).catch(() => []),
+      db.all('SELECT id, kind, title, status, scheduled_at, created_at FROM requests WHERE business_id = ? AND unit_id = ? ORDER BY created_at DESC LIMIT 20', c.businessId, c.params.id).catch(() => []),
+      db.all('SELECT b.id, b.date, b.status, b.paid, a.name AS amenity FROM bookings b LEFT JOIN amenities a ON a.id = b.amenity_id WHERE b.business_id = ? AND b.unit_id = ? ORDER BY b.date DESC LIMIT 20', c.businessId, c.params.id).catch(() => []),
     ]);
+    // Historia de la unidad en un solo hilo: pagos y mora, PQRS, solicitudes y reservas (lo último primero)
+    const dia = (t) => String(t || '').slice(0, 10), hoy = new Date().toISOString().slice(0, 10);
+    const ESTADO = { open: 'Abierta', in_progress: 'En gestión', closed: 'Cerrada', pending: 'Pendiente', approved: 'Aprobada', rejected: 'Rechazada', done: 'Completada', cancelled: 'Cancelada' };
+    const historia = [
+      ...charges.filter((x) => x.paid_at).map((x) => ({ fecha: dia(x.paid_at), titulo: `Pagó ${CONCEPTS[x.concept] || x.concept}${x.period ? ' ' + x.period : ''}`, valor: x.amount, icono: 'bi-check2-circle', tono: 'ok' })),
+      ...charges.filter((x) => !x.paid_at && x.due_date < hoy).map((x) => ({ fecha: dia(x.due_date), titulo: `Mora: ${CONCEPTS[x.concept] || x.concept}${x.period ? ' ' + x.period : ''}`, detalle: 'Venció sin pago', valor: x.amount, icono: 'bi-exclamation-triangle', tono: 'mal' })),
+      ...pqrs.map((x) => ({ fecha: dia(x.created_at), titulo: `PQRS: ${x.subject}`, detalle: ESTADO[x.status] || x.status, icono: 'bi-chat-square-text', tono: x.priority === 'alta' && x.status !== 'closed' ? 'mal' : x.status === 'closed' ? 'ok' : 'aviso' })),
+      ...solicitudes.map((x) => ({ fecha: dia(x.created_at), titulo: `Solicitud: ${x.title}`, detalle: `${x.kind} · ${ESTADO[x.status] || x.status}`, icono: 'bi-door-open' })),
+      ...reservas.map((x) => ({ fecha: dia(x.date), titulo: `Reserva de ${x.amenity || 'zona común'}`, detalle: ESTADO[x.status] || x.status, icono: 'bi-calendar-event', tono: x.status === 'rejected' ? 'mal' : undefined })),
+    ].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 40);
     // Desglose de lo pendiente por concepto (modal "Desglose de cobros").
     const breakdown = Object.keys(CONCEPTS).map((k) => ({
       concept: k,
       amount: charges.filter((ch) => ch.concept === k && !ch.paid_at).reduce((s, ch) => s + ch.amount, 0),
     }));
-    return json({ unit, charges, pets, breakdown });
+    return json({ unit, charges, pets, breakdown, historia });
   });
 
   r.post('/api/admin/units', 'tenant:unidades', async (c) => {

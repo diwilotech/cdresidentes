@@ -128,6 +128,11 @@ try {
 
   // --- Portal de propietarios (sigue igual) ---
   check('El portal de propietarios sigue sirviendo su ingreso', (await client()(`/${slug}/portal/login`)).status === 200);
+  const q1 = await app('/api/admin/pqrs', { method: 'POST', body: { property_id: P.data.id, unit_id: U.data.id, kind: 'queja', category: 'ruido', subject: 'Ruido en la noche', priority: 'alta' } });
+  const det = await app(`/api/admin/units/${U.data.id}`);
+  check('La unidad trae su historia (mora y PQRS) en un solo hilo', q1.status === 201 && det.status === 200 && det.data.historia?.some((h) => h.titulo.startsWith('Mora')) && det.data.historia?.some((h) => h.titulo.startsWith('PQRS')), JSON.stringify(det.data.historia || det.data).slice(0, 200));
+  const mv = await app(`/api/admin/pqrs/${q1.data.id}`, { method: 'PUT', body: { status: 'in_progress' } });
+  check('Mover una PQRS de estado (tablero) solo cambia el estado', mv.status === 200 && (await app('/api/admin/pqrs?status=in_progress')).data.items?.some((x) => x.id === q1.data.id));
   const portal = await client()(`/api/public/portal/login`, { method: 'POST', body: { unit_id: U.id, doc: '1020304050' } });
   check('El portal responde (con o sin ese contrato) sin romperse', portal.status < 500, String(portal.status));
 } catch (e) {

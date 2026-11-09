@@ -50,6 +50,7 @@
 <script src="/js/shell.js"></script>
 <script src="/js/residentes.js"></script>
 <script src="/admin/assets/cuenta-cobro.js"></script>
+<script src="/m/dwviz.js"></script>
 <script>
     (async () => {
       if (!(await App.init('unidades'))) return;
@@ -183,9 +184,11 @@
                 ${u.vehicles ? `<div class="mt-1"><i class="bi bi-car-front me-1"></i>${esc(u.vehicles)}</div>` : ''}</div>
               <div class="col-md-6"><div class="eyebrow mb-1">Mascotas</div>${d.pets.map((p) => `<div><i class="bi bi-heart me-1"></i>${esc(p.name)} · ${esc(p.species)}${p.breed ? ' ' + esc(p.breed) : ''}</div>`).join('') || '<span class="text-body-secondary">Ninguna registrada</span>'}</div>
             </div>
+            <div class="eyebrow mt-3 mb-1">Historia de la unidad</div><div id="historia" class="mb-2"></div>
             <div class="eyebrow mt-3 mb-1">Portal de propietarios</div><div id="access" class="small"></div>
             <div class="eyebrow mt-3 mb-1">Documentos</div><div id="files"></div>
           </div>`, { size: 'modal-lg' });
+        if (window.DwViz) window.DwViz.linea_de_tiempo(el.querySelector('#historia'), (d.historia || []).map((h) => ({ ...h, fecha: App.fmtDate(h.fecha) })), { fmt: money });
         portalAccess(el.querySelector('#access'), u);
         App.attachments(el.querySelector('#files'), 'unit', u.id);
         el.querySelector('[data-pdf]').addEventListener('click', () => CuentaCobro.open({ unit: u.id }));
