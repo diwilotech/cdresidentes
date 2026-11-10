@@ -7,6 +7,7 @@
 import { HttpError } from './http.js';
 import { CENTRALES, activeModuleIds, allModules, roleReaches, APP } from './modules.js';
 import { TOOLS as OWN_TOOLS } from '../ia/index.js';
+import { pendientesDe } from '../ia/pendientes.js';
 import { audit } from './audit.js';
 
 export const isCentralApi = (path) => CENTRALES.some((id) => path === `/api/${id}` || path.startsWith(`/api/${id}/`));
@@ -44,6 +45,8 @@ export async function propiasDe(c) {
   return {
     modulos: mods.map(({ id, nombre, descripcion, permisos, mcp }) => ({ id, nombre, descripcion: descripcion || null, permisos, mcp: mcp || null, tipo: 'propio' })),
     catalogo: tools.map(({ name, description, inputSchema, rol, tipo, modulo }) => ({ name, description, inputSchema, rol: rol || 'staff', tipo: tipo === 'escritura' ? 'escritura' : 'lectura', modulo })),
+    // IA proactiva: lo que necesita atención hoy en los módulos propios (pendientes.js); usa las herramientas de lectura de este rol
+    pendientes: () => pendientesDe(async (name, args = {}) => { const t = tools.find((x) => x.name === name && x.tipo !== 'escritura'); if (!t) return null; try { return await t.run(c, args); } catch (e) { console.error('pendientes', name, e.message); return null; } }),
     async ejecutar(name, args) {
       const t = tools.find((x) => x.name === name);
       if (!t) return { ok: false, error: 'Herramienta no disponible para este negocio o rol', status: 404 };
